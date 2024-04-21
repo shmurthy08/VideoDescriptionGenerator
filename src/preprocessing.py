@@ -21,17 +21,26 @@ class ClipsCaptions:
     @staticmethod
     def extract_frames(video_path, num_frames):
         cap = cv2.VideoCapture(video_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        # Calculate step size to sample frames evenly
+        step_size = total_frames // num_frames
+        frame_indices = [i * step_size for i in range(num_frames)]
+        
         frames = []
-        while True:
+        for index in frame_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, index)
             ret, frame = cap.read()
             if not ret:
                 break
             frame = cv2.resize(frame, (224, 224))  # Resize frame to match ConvLSTM2D input shape
             frames.append(frame)
-            if len(frames) == num_frames:
-                break
+        
         cap.release()
+        if(len(frames) < num_frames):
+            print("\n\n", "Warning: Less frames than expected: ", len(frames), "\n\n")
         return np.array(frames)
+
 
     @classmethod
     def from_video(cls, video_path, caption_file, num_frames=10, num_captions=5):
@@ -64,9 +73,10 @@ if __name__ == "__main__":
     curr_count = 1
     for avi_file in avi_files:
         print("Processing video", curr_count, "of", len(avi_files))
+        curr_count += 1
         # create ClipsCaptions obj
         video_path = os.path.join(video_dir, avi_file)
-        clip_captions = ClipsCaptions.from_video(video_path, caption_file, num_frames, num_captions)
+        clip_captions = ClipsCaptions.from_video(video_path, caption_file)
         
         # Serialize instance and save it in the directory
         output_file = os.path.join(output_dir, avi_file.replace('.avi', '.pkl'))
