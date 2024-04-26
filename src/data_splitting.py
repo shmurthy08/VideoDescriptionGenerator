@@ -39,6 +39,8 @@ for path in dataset_paths:
         dataset.append(pickle.load(f))
 
 # Shuffle the dataset
+# set a seed
+np.random.seed(42)
 np.random.shuffle(dataset)
 
 # Split the dataset into train, test, and validation sets
