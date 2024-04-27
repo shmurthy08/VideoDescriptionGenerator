@@ -5,3 +5,6 @@ data/preprocessed_*
 *glove.6B.300d.txt*
 *.txt
 *_pycache_*
+*test_dataset.pkl*
+*train_dataset.pkl*
+*val_dataset.pkl*

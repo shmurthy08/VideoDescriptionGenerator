@@ -102,10 +102,9 @@ model.compile(optimizer='adam', loss='mse')  # Using mean squared error as the l
 # Fit the model
 model.fit(train_frames, train_frames, batch_size=batch_size, epochs=1, validation_data=(val_frames, val_frames))
 
-# Extract features from the intermediate model
-_, features = model(train_frames)
-
-print(features.shape)
+# Extract features using the model
+feature_maps_train = model.predict(train_frames)
+feature_maps_val = model.predict(val_frames)
 
 # Transformer Decoder using Lightweight Pretrained GPT
 # from transformers import GPT2Tokenizer, TFGPT2LMHeadModel
