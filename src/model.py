@@ -1,10 +1,11 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Layer, ConvLSTM2D, LayerNormalization, Dense, Dropout, LSTM, Flatten, Embedding, Conv2D, Permute, Multiply, Reshape, Input, Concatenate, MultiHeadAttention
+from tensorflow.keras.layers import Layer, ConvLSTM2D, LayerNormalization, Dense, Dropout, LSTM, Flatten, Embedding, Conv2D, Permute, Multiply, Reshape, Input, Concatenate, MultiHeadAttention, Add, LayerNormalization, TimeDistributed
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import Model
 import numpy as np
 import pickle as pkl
+
 
 with open('word_index.pkl', 'rb') as f:
     word_index = pkl.load(f)
@@ -87,107 +88,40 @@ def self_attention_convLSTM_model(input_shape):
     convlstm1 = ConvLSTM2D(filters=3, kernel_size=(3, 3), padding='same', return_sequences=True)(reshaped_inputs)
     convlstm2 = ConvLSTM2D(filters=3, kernel_size=(3, 3), padding='same', return_sequences=True)(convlstm1)
 
-    # Output feature maps from intermediate layers
-    intermediate_model = Model(inputs=inputs, outputs=[convlstm1, convlstm2])
 
-    return intermediate_model
-
-# Assuming your video frames have shape (batch_size, samples, height, width, channels)
-input_shape = (10, 224, 224, 3)
-
-# Instantiate the model
-model = self_attention_convLSTM_model(input_shape)
-model.compile(optimizer='adam', loss='mse')  # Using mean squared error as the loss function for feature extraction
-
-# Fit the model
-model.fit(train_frames, train_frames, batch_size=batch_size, epochs=1, validation_data=(val_frames, val_frames))
-
-# Extract features using the model
-feature_maps_train = model.predict(train_frames)
-feature_maps_val = model.predict(val_frames)
-
-# Transformer Decoder using Lightweight Pretrained GPT
-# from transformers import GPT2Tokenizer, TFGPT2LMHeadModel
-
-# # Load the GPT2 tokenizer and model
-# tokenizer = GPT2Tokenizer.from_pretrained('gpt2-medium')
-# gpt2 = TFGPT2LMHeadModel.from_pretrained('gpt2-medium')
-
-# # Freeze the weights of the GPT2 model
-# gpt2.trainable = False
-
-# # Transformer Decoder
-# def transformer_decoder(vocab_size, max_length, embed_dim, num_heads, ff_dim, gpt2):
-#     # Input layers
-#     input_ids = Input(shape=(max_length,), dtype=tf.int32)
-#     features = Input(shape=(224, 224, 64))  # Adjust the shape as needed
-
-#     # GPT2 model
-#     gpt2_output = gpt2(input_ids)[0]
-
-#     # Concatenate the GPT2 output and the features
-#     concat = Concatenate()([gpt2_output, features])
-
-#     # LSTM layer
-#     lstm = LSTM(512)(concat)
-
-#     # Output layer
-#     outputs = Dense(vocab_size, activation='softmax')(lstm)
-
-#     # Model
-#     model = Model(inputs=[input_ids, features], outputs=outputs)
-
-#     return model
+    return Model(inputs=inputs, outputs=convlstm2)
 
 
-# # Instantiate the model
-# # Pad the captions to the required length
-# train_captions = pad_sequences(train_captions, maxlen=30, padding='post')
-# val_captions = pad_sequences(val_captions, maxlen=30, padding='post')
+# Decoder with LSTM
+def decoder_lstm_model(vocab_size, max_length, embedding_dim):
+    inputs = Input(shape=(max_length,))
+    x = Embedding(input_dim=vocab_size, output_dim=embedding_dim, mask_zero=True)(inputs)
+    x = LSTM(512, return_sequences=True)(x)
+    x = Dense(vocab_size, activation='softmax')(x)
+    return Model(inputs=inputs, outputs=x)
 
-# vocab_size = len(word_index) + 1
-# max_length = 30
-# embed_dim = 768
-# num_heads = 12
-# ff_dim = 3072
+# Model Creation
+frame_shape = (num_frames, frame_height, frame_width, num_channels)
 
+# Create Sequential Model that combines encoder and decoder
+encoder = self_attention_convLSTM_model(frame_shape)
+decoder = decoder_lstm_model(vocab_size, max_length=20, embedding_dim=256)
 
-# decoder_model = transformer_decoder(vocab_size, max_length, embed_dim, num_heads, ff_dim, gpt2)
-# decoder_model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+# Define the input layers
+frame_input = Input(shape=frame_shape)
+caption_input = Input(shape=(train_captions.shape[1],))
 
+# Get the output from the encoder
+encoded_frames = encoder(frame_input)
 
-# # combine the models
-# class VideoDescriptionGenerator(Model):
-#     def __init__(self, intermediate_model, decoder_model):
-#         super(VideoDescriptionGenerator, self).__init__()
-#         self.intermediate_model = intermediate_model
-#         self.decoder_model = decoder_model
+# Get the output from the decoder
+decoded_captions = decoder(caption_input)
 
-#     def call(self, inputs):
-#         frames = inputs[0]
-#         captions = inputs[1]
+# Define the model
+model = Model(inputs=[frame_input, caption_input], outputs=decoded_captions)
 
-#         # Extract features from video frames
-#         _, features = self.intermediate_model(frames)
+# Compile the model
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
-#         # Generate captions using the decoder model
-#         outputs = self.decoder_model([captions, features])
-
-#         return outputs
-
-# # Instantiate the VideoDescriptionGenerator model
-# video_description_generator = VideoDescriptionGenerator(model, decoder_model)
-# video_description_generator.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-
-# # Train the model
-# video_description_generator.fit([train_frames, train_captions], train_captions, batch_size=batch_size, epochs=10, validation_data=([val_frames, val_captions], val_captions))
-
-    
-    
-
-# # Instantiate the VideoDescriptionGenerator model
-# video_description_generator = VideoDescriptionGenerator(model, decoder_model)
-# video_description_generator.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-
-# # Train the model
-# video_description_generator.fit([train_frames, train_captions], train_captions, batch_size=batch_size, epochs=10, validation_data=([val_frames, val_captions], val_captions))
+# Train the model
+model.fit([train_frames, train_captions], train_captions, batch_size=batch_size, epochs=5, validation_data=([val_frames, val_captions], val_captions))
