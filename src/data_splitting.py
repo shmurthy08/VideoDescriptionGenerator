@@ -1,6 +1,9 @@
 import pickle
 import numpy as np
 import os
+from keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from keras.utils import to_categorical
 from sklearn.model_selection import train_test_split
 from preprocessing import ClipsCaptions
 
@@ -47,6 +50,7 @@ np.random.shuffle(dataset)
 train_size = int(0.7 * len(dataset))
 val_size = int(0.1 * len(dataset))
 
+
 train_data = dataset[:train_size]
 val_data = dataset[train_size:train_size + val_size]
 test_data = dataset[train_size + val_size:]
@@ -74,3 +78,13 @@ with open('val_dataset.pkl', 'wb') as f:
 
 with open('test_dataset.pkl', 'wb') as f:
     pickle.dump(test_data, f)
+
+# Pickle a set with ALL captions
+all_captions = []
+for clip in dataset:
+    all_captions.extend(clip.captions)
+
+with open('all_captions.pkl', 'wb') as f:
+    pickle.dump(all_captions, f)
+    
+print(all_captions[:5])

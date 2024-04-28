@@ -44,21 +44,38 @@ class ClipsCaptions:
 
     @classmethod
     def from_video(cls, video_path, caption_file, num_frames=10, num_captions=5):
-        # extract frames
+        # Extract frames
         frames = cls.extract_frames(video_path, num_frames)
 
-        # read captions
+        # Read captions
         captions = {}
         with open(caption_file, 'r') as f:
             for line in f:
                 video_name, caption = line.strip().split(' ', 1)
                 captions[video_name] = captions.get(video_name, []) + [caption]
 
-        # creating objects
+        # Get captions for the video
         video_name = video_path.split('/')[-1].split('.')[0]
         caption_list = captions.get(video_name, [])
-        caption_list = caption_list[:num_captions] if len(caption_list) >= num_captions else caption_list + [''] *(num_captions - len(caption_list))
+        caption_list = caption_list[:num_captions] if len(caption_list) >= num_captions else caption_list + [''] * (num_captions - len(caption_list))
+
+        # Preprocess captions
+        for i in range(len(caption_list)):
+            caption = caption_list[i]
+            # Convert the caption to lowercase
+            caption = caption.lower()
+            # Remove non-alphabetic characters and split into words
+            caption = [word for word in caption.split() if word.isalpha()]
+            # Join the words back into a sentence
+            caption = ' '.join(caption)
+            # Remove additional spaces
+            caption = caption.replace('\s+', ' ')
+            # Add start and end tags to the caption
+            caption = 'startseq ' + " ".join([word for word in caption.split() if len(word) > 1]) + ' endseq'
+            caption_list[i] = caption
+
         return cls(video_name, caption_list, frames)
+
 
 
 
