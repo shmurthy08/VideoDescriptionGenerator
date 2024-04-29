@@ -28,7 +28,7 @@ def create_word_index(dataset):
 
 # Load the pickled dataset
 # Specify the directory containing the dataset files
-dataset_dir = '../data/preprocessed_10frames_5captions'
+from preprocessing import output_dir as dataset_dir
 # Get the paths of all dataset files
 dataset_paths = []
 for file in os.listdir(dataset_dir):

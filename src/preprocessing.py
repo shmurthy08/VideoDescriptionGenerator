@@ -4,7 +4,7 @@ import numpy as np
 import pickle
 
 # CONSTANTS
-frames = 10 # (Maximum 10)
+frames = 5 # (Maximum 10)
 captions = 5 # (Maximum 18)
 video_dir = '../data/YouTubeClips/'
 caption_file = '../data/Captions.txt'
@@ -93,7 +93,7 @@ if __name__ == "__main__":
         curr_count += 1
         # create ClipsCaptions obj
         video_path = os.path.join(video_dir, avi_file)
-        clip_captions = ClipsCaptions.from_video(video_path, caption_file)
+        clip_captions = ClipsCaptions.from_video(video_path, caption_file, num_frames=frames, num_captions=captions)
         
         # Serialize instance and save it in the directory
         output_file = os.path.join(output_dir, avi_file.replace('.avi', '.pkl'))

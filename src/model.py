@@ -4,12 +4,14 @@ from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import Model
 from tensorflow.keras.models import Sequential
+from tensorflow.keras.callbacks import EarlyStopping
 import numpy as np
 import pickle as pkl
 import os
+import matplotlib.pyplot as plt
 from preprocessing import ClipsCaptions
 
-dataset_dir = '../data/preprocessed_10frames_5captions'
+from preprocessing import output_dir as dataset_dir
 # Get the paths of all dataset files
 dataset_paths = []
 for file in os.listdir(dataset_dir):
@@ -75,8 +77,8 @@ val_frames = np.array([preprocess_frames(sample.frames) for sample in val_datase
 val_captions = preprocess_captions([sample.captions for sample in val_dataset])
 
 # Parameters
-batch_size = 32
-num_frames = 10
+batch_size = 5
+from preprocessing import frames as num_frames
 frame_height = 224
 frame_width = 224
 num_channels = 3
@@ -105,9 +107,9 @@ print("\n")
 # Next-Frame Prediction Model using ConvLSTM to get Hidden Representations
 
 input = Input(shape=(num_frames, frame_height, frame_width, num_channels))
-convlstm = ConvLSTM2D(filters=64, kernel_size=(3,3), padding='same', return_sequences=True)(input)
+convlstm = ConvLSTM2D(filters=128, kernel_size=(3,3), padding='same', return_sequences=True)(input)
 convlstm = BatchNormalization()(convlstm)
-convlstm = ConvLSTM2D(filters=64, kernel_size=(3,3), padding='same', return_sequences=True)(convlstm)
+convlstm = ConvLSTM2D(filters=128, kernel_size=(3,3), padding='same', return_sequences=True)(convlstm)
 output = Conv3D(filters=3, kernel_size=(3,3,3), activation='sigmoid', padding='same')(convlstm)
 
 model = Model(inputs=input, outputs=output)
@@ -117,4 +119,18 @@ model.summary()
 model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
 
 # Model Fit
-model.fit(train_frames[:10], train_frames[:10], batch_size=batch_size, epochs=10, validation_data=(val_frames, val_frames))
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=5)
+
+history = model.fit(train_frames, train_frames, batch_size=batch_size, epochs=100, validation_data=(val_frames, val_frames), callbacks=[early_stopping])
+history = model.fit(train_frames, train_frames, batch_size=batch_size, epochs=100, validation_data=(val_frames, val_frames))
+
+# Plot training & validation accuracy values
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
+plt.title('Model accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.savefig('accuracy_plot.png')  # Save the plot as a PNG image
+plt.show()
