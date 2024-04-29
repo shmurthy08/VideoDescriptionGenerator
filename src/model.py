@@ -122,8 +122,7 @@ model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
 
 early_stopping = EarlyStopping(monitor='val_loss', patience=5)
 
-history = model.fit(train_frames, train_frames, batch_size=batch_size, epochs=100, validation_data=(val_frames, val_frames), callbacks=[early_stopping])
-history = model.fit(train_frames, train_frames, batch_size=batch_size, epochs=100, validation_data=(val_frames, val_frames))
+history = model.fit(train_frames, train_frames, batch_size=batch_size, epochs=10, validation_data=(val_frames, val_frames), callbacks=[early_stopping])
 
 # Plot training & validation accuracy values
 plt.plot(history.history['accuracy'])
