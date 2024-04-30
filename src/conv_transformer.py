@@ -4,6 +4,7 @@ from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import Model
 from tensorflow.keras.models import Sequential
+from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, LearningRateScheduler
 import numpy as np
 import pickle as pkl
 import os
@@ -111,7 +112,7 @@ print(type(train_captions))
 
 # Parameters
 batch_size = 7
-num_frames = 5
+from preprocessing import frames as num_frames
 frame_height = 224
 frame_width = 224
 num_channels = 3
@@ -139,7 +140,15 @@ model = Model(inputs=inputs, outputs=output)
 model.summary()
 
 model.compile(optimizer='adam', loss='mse', metrics=['mean_absolute_error'])
-model.fit(x_train, y_train, batch_size=10, epochs=10, validation_data=(x_val, y_val))
+
+checkpoint_callback = ModelCheckpoint(filepath='model_checkpoint.h5',
+                                      save_best_only=True,
+                                      monitor='val_loss',
+                                      mode='min')
+
+lr_scheduler_callback = LearningRateScheduler(lambda epoch, lr: lr * 0.1 if epoch > 5 else lr)
+
+model.fit(x_train, y_train, batch_size=10, epochs=10, validation_data=(x_val, y_val), callbacks=[checkpoint_callback, lr_scheduler_callback])
 
 plot_model(model, to_file='architecture.png', show_shapes=True, show_layer_names=True)
 
