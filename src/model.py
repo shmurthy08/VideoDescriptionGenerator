@@ -106,17 +106,18 @@ print("\n")
 
 # Next-Frame Prediction Model using ConvLSTM to get Hidden Representations
 
-input = Input(shape=(num_frames, frame_height, frame_width, num_channels))
-convlstm = ConvLSTM2D(filters=128, kernel_size=(3,3), padding='same', return_sequences=True)(input)
+inputs = Input(shape=(num_frames, frame_height, frame_width, num_channels))
+convlstm = ConvLSTM2D(filters=128, kernel_size=(3,3), padding='same', return_sequences=True)(inputs)
 convlstm = BatchNormalization()(convlstm)
 convlstm = ConvLSTM2D(filters=128, kernel_size=(3,3), padding='same', return_sequences=True)(convlstm)
 output = Conv3D(filters=3, kernel_size=(3,3,3), activation='sigmoid', padding='same')(convlstm)
 
-model = Model(inputs=input, outputs=output)
+model = Model(inputs=inputs, outputs=output)
 model.summary()
 
 # Compile the model
 model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+model.summary()
 
 # Model Fit
 

@@ -1,11 +1,11 @@
 import pickle
 import numpy as np
 import os
-from keras.preprocessing.text import Tokenizer
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+
 from keras.utils import to_categorical
 from sklearn.model_selection import train_test_split
 from preprocessing import ClipsCaptions
+from preprocessing import output_dir as dataset_dir
 
 # Function to create word_index and index_word dictionaries
 def create_word_index(dataset):
@@ -15,7 +15,7 @@ def create_word_index(dataset):
     for clip in dataset:
         captions = clip.captions
         for caption in captions:
-            words = caption.split()
+            words = caption.lower().split()  # Convert to lowercase and split into words
             for word in words:
                 if word not in word_index:
                     word_index[word] = index
@@ -28,7 +28,6 @@ def create_word_index(dataset):
 
 # Load the pickled dataset
 # Specify the directory containing the dataset files
-from preprocessing import output_dir as dataset_dir
 # Get the paths of all dataset files
 dataset_paths = []
 for file in os.listdir(dataset_dir):
