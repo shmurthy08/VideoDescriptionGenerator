@@ -1,1 +1,1 @@
-pip3 install opencv-python-headless
+pip3 install opencv-python-headless tf-models-official keras-nlp
