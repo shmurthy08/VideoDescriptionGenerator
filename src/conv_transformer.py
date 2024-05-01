@@ -399,7 +399,7 @@ history = caption_model.fit(
     batch_size=64,
     epochs=total_epochs,
     callbacks=[
-        tf.keras.callbacks.EarlyStopping(patience=3, restore_best_weights=True, monitor='val_loss', verbose=1),
+        tf.keras.callbacks.EarlyStopping(patience=8, restore_best_weights=True, monitor='val_loss', verbose=1),
         tf.keras.callbacks.ModelCheckpoint('caption_model.h5', save_best_only=True, save_weights_only=True, monitor='val_loss', verbose=1),
         TensorBoard(log_dir='logs/fit/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), histogram_freq=1, write_graph=True, write_images=True)
     ]
@@ -437,7 +437,7 @@ class MyHyperModel(HyperModel):
         return model.fit(
             *args,
             **kwargs,
-            callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3),
+            callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True, verbose=1),
                        tf.keras.callbacks.ModelCheckpoint('caption_model.h5', save_best_only=True, save_weights_only=True, monitor='val_loss'),
                        TensorBoard(log_dir='logs/fit/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), histogram_freq=1, write_graph=True, write_images=True)]
         )

@@ -43,7 +43,7 @@ class ClipsCaptions:
 
 
     @classmethod
-    def from_video(cls, video_path, caption_file, num_frames=10, num_captions=5):
+    def from_video(cls, video_path, caption_file, num_frames, num_captions=5):
         # Extract frames
         frames = cls.extract_frames(video_path, num_frames)
 
