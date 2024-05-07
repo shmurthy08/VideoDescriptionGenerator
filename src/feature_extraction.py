@@ -17,7 +17,7 @@ def preprocess_frames(frames):
     resized_frames = np.array([frame / 255.0 for frame in frames])
     return resized_frames
 
-dataset_dir = '../data/preprocessed_10frames_5captions'
+dataset_dir = '../data/preprocessed_5frames_5captions'
 # Get the paths of all dataset files
 dataset_paths = []
 for file in os.listdir(dataset_dir):
@@ -32,21 +32,20 @@ with open('val_dataset.pkl', 'rb') as f:
     val_dataset = pkl.load(f)
 
 
-
-
-
 train_frames = np.array([preprocess_frames(sample.frames) for sample in train_dataset])
 val_frames = np.array([preprocess_frames(sample.frames) for sample in val_dataset])
 
-
-
 # Parameters
-batch_size = 7
 num_frames = 5
 frame_height = 224
 frame_width = 224
 num_channels = 3
 
+
+
+
+
+# Create model
 # Encoder
 inputs = Input(shape=(num_frames, frame_height, frame_width, num_channels))
 x = ConvLSTM2D(filters=64, kernel_size=(3, 3), padding='same', return_sequences=True, activation='relu')(inputs)
@@ -56,16 +55,24 @@ x = ConvLSTM2D(filters=64, kernel_size=(3, 3), padding='same', return_sequences=
 x = BatchNormalization()(x)
 x = Add()([x, x1])  # Add input and output of the block (residual connection)
 
-x2 = ConvLSTM2D(filters=32, kernel_size=(3, 3), padding='same', return_sequences=True, activation='relu')(x)  # 
+x2 = ConvLSTM2D(filters=32, kernel_size=(3, 3), padding='same', return_sequences=True, activation='relu')(x)
 x = BatchNormalization()(x2)
 
-x3 = ConvLSTM2D(filters=3, kernel_size=(3, 3), padding='same', return_sequences=True, activation='relu')(x)
+x3 = ConvLSTM2D(filters=16, kernel_size=(3, 3), padding='same', return_sequences=True, activation='relu')(x)
 x = BatchNormalization()(x3)
+
+x4 = ConvLSTM2D(filters=3, kernel_size=(3, 3), padding='same', return_sequences=True, activation='relu')(x)
+x = BatchNormalization()(x4)
 
 
 # Decoder
 x = ConvLSTM2D(filters=3, kernel_size=(3, 3), padding='same', return_sequences=True, activation='relu')(x)
-x = Add()([x, x3])  # Add input from the second block output
+x = BatchNormalization()(x)
+x = Add()([x, x4])  # Add input from the second block output
+
+x = ConvLSTM2D(filters=16, kernel_size=(3, 3), padding='same', return_sequences=True, activation='relu')(x)
+x = BatchNormalization()(x)
+x = Add()([x, x3])  # Add input and output of the block (residual connection)
 
 x = ConvLSTM2D(filters=32, kernel_size=(3, 3), padding='same', return_sequences=True, activation='relu')(x)
 x = BatchNormalization()(x)
@@ -76,21 +83,45 @@ x = BatchNormalization()(x)
 x = Add()([x, x1])  # Add input from the first block output
 
 outputs = Conv3D(filters=3, kernel_size=(3, 3, 3), padding='same', activation='sigmoid')(x)  # Output layer to match input channels
-
-# Create model
-autoencoder = Model(inputs, outputs)
-autoencoder.compile(optimizer='adam', loss='mse')
+autoencoder = Model(inputs, outputs)    
+autoencoder.compile(optimizer='adam', loss='mse', metrics=['mae'])
 
 # Print model summary
 autoencoder.summary()
 
+def train_generator():
+    for features in train_frames:
+        yield (features, features)
+def val_generator():
+    for features in val_frames:
+        yield (features, features)
+
+output_types = (tf.float32, tf.float32)
+output_shapes = (tf.TensorShape([5, 224, 224, 3]), tf.TensorShape([5, 224, 224, 3]))
+
+
+# Create the dataset from the generator
+train_data = tf.data.Dataset.from_generator(
+    train_generator,
+    output_types=output_types,
+    output_shapes=output_shapes
+).batch(10)
+val_data = tf.data.Dataset.from_generator(
+    val_generator,
+    output_types=output_types,
+    output_shapes=output_shapes
+).batch(10)
+
+
+# Prefetch
+train_data = train_data.prefetch(tf.data.experimental.AUTOTUNE)
+val_data = val_data.prefetch(tf.data.experimental.AUTOTUNE)
+
+
 # Model Checkpoint and LR Scheduler
 model_checkpoint = tf.keras.callbacks.ModelCheckpoint('fe_model.h5', save_best_only=True, monitor='val_loss', mode='min', verbose=1)
-early_stopping = tf.keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True, monitor='val_loss', mode='min', verbose=1)
 reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(factor=0.1, patience=2, verbose=1)
-
-autoencoder.compile(optimizer='adam', loss='mse', metrics=['mae'])
-autoencoder.fit(train_frames, train_frames, batch_size=10, epochs=25, validation_data=(val_frames, val_frames), callbacks=[model_checkpoint, early_stopping, reduce_lr], verbose=1)
+autoencoder.fit(train_data, epochs=25, validation_data=val_data, callbacks=[model_checkpoint, reduce_lr], verbose=1)
 
 plot_model(autoencoder, to_file='architecture.png', show_shapes=True, show_layer_names=True)
 autoencoder.save('Feature_extract.h5')

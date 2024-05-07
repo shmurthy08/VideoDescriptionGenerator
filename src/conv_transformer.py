@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.layers import ConvLSTM2D, Input, Conv3D, LayerNormalization, Conv2D, Flatten, Dense, Embedding, BatchNormalization, Lambda, MultiHeadAttention, GlobalAveragePooling2D, Reshape, TimeDistributed
+from tensorflow.keras.layers import ConvLSTM2D, Input, Conv3D, LayerNormalization, Conv2D, Flatten, Dense, Embedding, BatchNormalization, Lambda, MultiHeadAttention, GlobalAveragePooling2D, Reshape, TimeDistributed, Add, Dropout
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import Model, load_model
@@ -11,8 +11,9 @@ from preprocessing import ClipsCaptions
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.callbacks import TensorBoard
 import datetime
+import keras_tuner as kt
 
-
+        
 
 dataset_dir = '../data/preprocessed_5frames_5captions'
 # Get the paths of all dataset files
@@ -112,16 +113,16 @@ frame_width = 224
 num_channels = 3
 
 # Call ConvLSTM Feature Extraction
+
 fe_model = load_model('fe_model.h5')
 def conv_lstm_extractor():
     # Freeze all layers
     for layer in fe_model.layers:
         layer.trainable = False
-    feature_output = fe_model.layers[-10].output
+    feature_output = fe_model.layers[-13].output # Extract features after Encoder is complete
     # Flatten with TimeDistributed
     feature_output = TimeDistributed(Flatten())(feature_output)
     extract = Model(inputs=fe_model.input, outputs=feature_output)
-    print(extract.summary())
     return extract
 
 
@@ -161,26 +162,71 @@ class VideoPositionalEmbedding(tf.keras.layers.Layer):
 
 
 class TransformerEncoder(tf.keras.layers.Layer):
-    def __init__(self, embed_dim, dense_dim, num_heads, **kwargs):
+    def __init__(self, embed_dim, num_heads, drop_rate, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
-        self.dense_dim = dense_dim
         self.num_heads = num_heads
-        self.attn1 = MultiHeadAttention(num_heads, embed_dim, dropout=0.3)
+        
+        self.attn1 = MultiHeadAttention(num_heads, embed_dim, dropout=drop_rate)
+        self.attn2 = MultiHeadAttention(num_heads, embed_dim, dropout=drop_rate)
+        self.attn3 = MultiHeadAttention(num_heads, embed_dim, dropout=drop_rate)
+        self.attn4 = MultiHeadAttention(num_heads, embed_dim, dropout=drop_rate)
+        self.attn5 = MultiHeadAttention(num_heads, embed_dim, dropout=drop_rate)
+        self.attn6 = MultiHeadAttention(num_heads, embed_dim, dropout=drop_rate)
+        
         self.layernorm1 = LayerNormalization()
+        self.layernorm2 = LayerNormalization()
+        self.layernorm3 = LayerNormalization()
+        self.layernorm4 = LayerNormalization()
+        self.layernorm5 = LayerNormalization()
+        self.layernorm6 = LayerNormalization()
+        self.layernorm7 = LayerNormalization()
+        
+        self.drop1 = tf.keras.layers.Dropout(drop_rate)
+        self.drop2 = tf.keras.layers.Dropout(drop_rate)
+        self.drop3 = tf.keras.layers.Dropout(drop_rate)
+        self.drop4 = tf.keras.layers.Dropout(drop_rate)
+        self.drop5 = tf.keras.layers.Dropout(drop_rate)
+        self.drop6 = tf.keras.layers.Dropout(drop_rate)
+        self.drop7 = tf.keras.layers.Dropout(drop_rate)
+        
         self.vidpos = VideoPositionalEmbedding(seq_len=5, embed_dim=embed_dim)
         self.dense = Dense(embed_dim, activation='relu')
-        self.add_layer = tf.keras.layers.Add()  # Add residual connection layer
 
     def call(self, inputs, training):
         inputs = self.dense(inputs)
+        inputs = self.drop1(inputs)
         inputs = self.layernorm1(inputs)
         inputs = self.vidpos(inputs)
+        
         attn_out = self.attn1(query=inputs, value=inputs, key=inputs, attention_mask=None, training=training)
-        # Residual connection
-        attn_out = self.add_layer([inputs, attn_out])
-        return attn_out
+        attn_out = self.drop2(attn_out)
+        attn_out = self.layernorm2(attn_out + inputs)
+        
+        attn_out2 = self.attn2(query=attn_out, value=attn_out, key=attn_out, attention_mask=None, training=training)
+        attn_out2 = self.drop3(attn_out2)
+        attn_out2 = self.layernorm3(attn_out2 + attn_out)
+        
+        attn_out3 = self.attn3(query=attn_out2, value=attn_out2, key=attn_out2, attention_mask=None, training=training)
+        attn_out3 = self.drop4(attn_out3)
+        attn_out3 = self.layernorm4(attn_out3 + attn_out2)
+        
+        attn_out4 = self.attn4(query=attn_out3, value=attn_out3, key=attn_out3, attention_mask=None, training=training)
+        attn_out4 = self.drop5(attn_out4)
+        attn_out4 = self.layernorm5(attn_out4 + attn_out3)
+        
+        attn_out5 = self.attn5(query=attn_out4, value=attn_out4, key=attn_out4, attention_mask=None, training=training)
+        attn_out5 = self.drop6(attn_out5)
+        attn_out5 = self.layernorm6(attn_out5 + attn_out4)
+        
+        attn_out6 = self.attn6(query=attn_out5, value=attn_out5, key=attn_out5, attention_mask=None, training=training)
+        attn_out6 = self.drop7(attn_out6)
+        attn_out6 = self.layernorm7(attn_out6 + attn_out5)
+
+        return attn_out6
     
+
+
 class PositionalEmbedding(tf.keras.layers.Layer):
     def __init__(self, vocab_size, embed_dim, seq_len, **kwargs):
         super().__init__(**kwargs)
@@ -202,27 +248,45 @@ class PositionalEmbedding(tf.keras.layers.Layer):
         return tf.math.not_equal(inputs, 0)
     
 class TransformerDecoder(tf.keras.layers.Layer):
-    def __init__(self, embed_dim, ff_dim, num_heads, vocab_size, **kwargs):
+    def __init__(self, embed_dim, ff_dim, num_heads, vocab_size, drop_rate, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
         self.ff_dim = ff_dim
         self.num_heads = num_heads
-        self.attn1 = MultiHeadAttention(num_heads, embed_dim, dropout=0.4)
-        self.attn2 = MultiHeadAttention(num_heads, embed_dim, dropout=0.2)
+        
+        self.attn1 = MultiHeadAttention(num_heads, embed_dim, dropout=drop_rate)
+        self.attn2 = MultiHeadAttention(num_heads, embed_dim, dropout=drop_rate)
+        self.attn3 = MultiHeadAttention(num_heads, embed_dim, dropout=drop_rate)
+        self.attn4 = MultiHeadAttention(num_heads, embed_dim, dropout=drop_rate)
+        self.attn5 = MultiHeadAttention(num_heads, embed_dim, dropout=drop_rate)
+        self.attn6 = MultiHeadAttention(num_heads, embed_dim, dropout=drop_rate)
+        
+        self.layernorm0 = LayerNormalization()
         self.layernorm1 = LayerNormalization()
         self.layernorm2 = LayerNormalization()
-        self.layer_norm3 = LayerNormalization()
-
+        self.layernorm3 = LayerNormalization()
+        self.layernorm4 = LayerNormalization()
+        self.layernorm5 = LayerNormalization()
+        self.layernorm6 = LayerNormalization()
+        self.layernorm7 = LayerNormalization()
+        
+        self.drop1 = tf.keras.layers.Dropout(drop_rate)
+        self.drop2 = tf.keras.layers.Dropout(drop_rate)
+        self.drop3 = tf.keras.layers.Dropout(drop_rate)
+        self.drop4 = tf.keras.layers.Dropout(drop_rate)
+        self.drop5 = tf.keras.layers.Dropout(drop_rate)
+        self.drop6 = tf.keras.layers.Dropout(drop_rate)
+        self.drop7 = tf.keras.layers.Dropout(drop_rate)
+        
         self.ff_nn1 = Dense(ff_dim, activation='relu')
         self.ff_nn2 = Dense(embed_dim)
         self.ff_nn3 = Dense(vocab_size, activation='softmax')
         self.embed = PositionalEmbedding(embed_dim=embed_dim, vocab_size=vocabulary_size, seq_len=20)
         self.masking = True
-        self.add_layer1 = tf.keras.layers.Add()  # Add residual connection layer
-        self.add_layer2 = tf.keras.layers.Add()  # Add residual connection layer
-
     def call(self, inputs, encoder_out, training, mask=None):
         inputs = self.embed(inputs)
+        inputs = self.drop1(inputs)
+        inputs = self.layernorm0(inputs)
         causal_mask = self.causal_attn_mask(inputs)
         combo_mask = None
         pad_mask = None
@@ -231,15 +295,43 @@ class TransformerDecoder(tf.keras.layers.Layer):
             combo_mask = tf.cast(mask[:, :, tf.newaxis], tf.int32)   
             combo_mask = tf.minimum(combo_mask, causal_mask)
             
-        attn_out1 = self.attn1(query=inputs, value=inputs, key=inputs, attention_mask=combo_mask, training=training)
+        attn_out1 = self.attn1(query=inputs, value=inputs, key=inputs, attention_mask=combo_mask,  
+                               training=training)
+        attn_out1 = self.drop2(attn_out1)
         out1 = self.layernorm1(attn_out1 + inputs)
-        attn_out2 = self.attn2(query=out1, value=encoder_out, key=encoder_out, attention_mask=pad_mask, training=training)
+        
+        attn_out2 = self.attn2(query=out1, value=encoder_out, key=encoder_out, attention_mask=pad_mask, 
+                               training=training)
+        attn_out2 = self.drop3(attn_out2)
         out2 = self.layernorm2(attn_out2 + out1)
         
-        ff_out1 = self.ff_nn1(out2)
+        attn_out3 = self.attn3(query=out2, value=out2, key=out2, attention_mask=pad_mask,
+                                training=training)
+        attn_out3 = self.drop4(attn_out3)
+        out3 = self.layernorm3(attn_out3 + out2)
+        
+        attn_out4 = self.attn4(query=out3, value=out3, key=out3, attention_mask=pad_mask,
+                                training=training)
+        attn_out4 = self.drop5(attn_out4)
+        out4 = self.layernorm4(attn_out4 + out3)
+        
+        attn_out5 = self.attn5(query=out4, value=out4, key=out4, attention_mask=pad_mask,
+                                training=training)
+        attn_out5 = self.drop6(attn_out5)
+        out5 = self.layernorm5(attn_out5 + out4)
+        
+        attn_out6 = self.attn6(query=out5, value=out5, key=out5, attention_mask=pad_mask,
+                                training=training)
+        attn_out6 = self.drop7(attn_out6)
+        out6 = self.layernorm6(attn_out6 + out5)
+        
+
+        
+        ff_out1 = self.ff_nn1(out6)
         ff_out2 = self.ff_nn2(ff_out1)
-        ff_out2 = self.layer_norm3(ff_out2 + out2)
+        ff_out2 = self.layernorm7(ff_out2 + out6)
         final_out = self.ff_nn3(ff_out2)
+        
         return final_out
     def causal_attn_mask(self, inputs):
         shape = tf.shape(inputs)
@@ -314,8 +406,7 @@ class VideoCaptioningModel(Model):
             # Gradient update steps with gradient clipping
             train_vars = self.encoder.trainable_variables + self.decoder.trainable_variables
             grads = tape.gradient(loss, train_vars)
-            grads, _ = tf.clip_by_global_norm(grads, clip_norm=1.5)  # Gradient clipping
-            grads = [tf.clip_by_value(g, -1.5, 1.5) for g in grads]  # Value clipping
+            grads, _ = tf.clip_by_global_norm(grads, clip_norm=1.5)  # Gradient norm clipping
             self.optimizer.apply_gradients(zip(grads, train_vars))
         
         loss = batch_loss
@@ -365,90 +456,108 @@ class VideoCaptioningModel(Model):
     def metrics(self):
         return [self.loss_tracker, self.acc_tracker]
 
+# Learning Rate Scheduler for the optimizer
+class LRSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
+    def __init__(self, post_warmup_learning_rate, warmup_steps, total_steps):
+        super().__init__()
+        self.post_warmup_learning_rate = post_warmup_learning_rate
+        self.warmup_steps = warmup_steps
+        self.total_steps = total_steps
+
+    def __call__(self, step):
+        global_step = tf.cast(step, tf.float32)
+        warmup_steps = tf.cast(self.warmup_steps, tf.float32)
+        total_steps = tf.cast(self.total_steps, tf.float32)
+
+        warmup_progress = global_step / warmup_steps
+        linear_warmup = self.post_warmup_learning_rate * warmup_progress
+        
+        cosine_decay = 0.5 * (1 + tf.cos((global_step - warmup_steps) / (total_steps - warmup_steps) * np.pi))
+        post_warmup_lr = self.post_warmup_learning_rate * cosine_decay
+        
+        return tf.cond(
+            global_step < warmup_steps,
+            lambda: linear_warmup,
+            lambda: post_warmup_lr
+        )
+
+# Create a learning rate schedule
+num_train_steps = (len(train_dataset) // 32) * 75
+num_warmup_steps = num_train_steps // 32
+
+def train_generator():
+    '''
+    Generator function to yield training data
+    '''
+    for features, labels in zip(train_frames, train_captions):
+        yield features, labels
+
+def val_generator():
+    '''
+    Generator function to yield validation data
+    '''
+    for features, labels in zip(val_frames, val_captions):
+        yield features, labels
+
+# Define output types and shapes to match actual data
+output_types = (tf.float32, tf.int32)
+output_shapes = (tf.TensorShape([5, 224, 224, 3]), tf.TensorShape([5, 20]))
+
+# Create the dataset from the generator
+train_data = tf.data.Dataset.from_generator(
+    train_generator,
+    output_types=output_types,
+    output_shapes=output_shapes
+).batch(32)
+val_data = tf.data.Dataset.from_generator(
+    val_generator,
+    output_types=output_types,
+    output_shapes=output_shapes
+).batch(32)
+
+
+# Prefetch
+train_data = train_data.prefetch(tf.data.experimental.AUTOTUNE)
+val_data = val_data.prefetch(tf.data.experimental.AUTOTUNE)
+
+
 # Define Model
 ex_model = conv_lstm_extractor()
 
-encoder = TransformerEncoder(embed_dim=1024, dense_dim=2048, num_heads=2)
+encoder = TransformerEncoder(embed_dim=1152, num_heads=3, drop_rate=0.1)
 
-decoder = TransformerDecoder(embed_dim=1024, ff_dim=2048, num_heads=3, vocab_size=vocabulary_size)
+decoder = TransformerDecoder(embed_dim=1152, ff_dim=1536, num_heads=3, vocab_size=vocabulary_size, drop_rate=0.1)
 
 caption_model = VideoCaptioningModel(ex_model, encoder, decoder)
+caption_model.compile(
+    optimizer=tf.keras.optimizers.AdamW(
+        LRSchedule(
+            post_warmup_learning_rate=1e-4,
+            warmup_steps=num_warmup_steps,
+            total_steps=num_train_steps
+        ),
+        weight_decay=1e-5
+    ),
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
 
-# Learning Rate Warmup with Cosine Decay
-initial_learning_rate = 0.001
-warmup_epochs = 20
-total_epochs = 45
-
-# Calculate the number of warmup steps
-warmup_steps = warmup_epochs * len(train_frames) // 24
-
-# Define the learning rate schedule
-lr_schedule = tf.keras.optimizers.schedules.CosineDecay(initial_learning_rate, total_epochs - warmup_epochs)
-
-# Define the optimizer with weight decay
-optimizer = tf.keras.optimizers.AdamW(learning_rate=lr_schedule, weight_decay=1e-6)
-
-# Compile the model
-caption_model.compile(optimizer=optimizer, loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False), metrics=['accuracy'])
-
-# Fit the model
 history = caption_model.fit(
-    x=train_frames,
-    y=train_captions,
-    validation_data=(val_frames, val_captions),
-    batch_size=64,
-    epochs=total_epochs,
+    train_data,
+    validation_data=val_data,
+    epochs=75,
     callbacks=[
-        tf.keras.callbacks.EarlyStopping(patience=8, restore_best_weights=True, monitor='val_loss', verbose=1),
-        tf.keras.callbacks.ModelCheckpoint('caption_model.h5', save_best_only=True, save_weights_only=True, monitor='val_loss', verbose=1),
-        TensorBoard(log_dir='logs/fit/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), histogram_freq=1, write_graph=True, write_images=True)
-    ]
+        tf.keras.callbacks.EarlyStopping(patience=9, restore_best_weights=False, monitor='val_loss', verbose=1),
+        tf.keras.callbacks.ModelCheckpoint('caption_model_weights.h5', save_best_only=True, save_weights_only=True, monitor='val_loss', verbose=1),
+        TensorBoard(log_dir='logs/caption_final_model/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), histogram_freq=1, write_graph=True, write_images=True)
+    ],
 )
 
-# Keras Tuner
-from keras_tuner import RandomSearch, HyperParameters
-
-class MyHyperModel(HyperModel):
-    def build(self, hp):
-        ex_model = conv_lstm_extractor()
-        encoder = TransformerEncoder(
-            embed_dim=hp.Int('embed_dim', 256, 512, step=64),
-            dense_dim=hp.Int('dense_dim', 1024, 4096, step=1024),
-            num_heads=hp.Int('num_heads', 1, 4, step=1)
-        )
-        decoder = TransformerDecoder(
-            embed_dim=hp.Int('embed_dim', 256, 512, step=64),
-            ff_dim=hp.Int('ff_dim', 1024, 4096, step=1024),
-            num_heads=hp.Int('num_heads', 1, 4, step=1),
-            vocab_size=vocabulary_size
-        )
-        model = VideoCaptioningModel(ex_model, encoder, decoder)
-        model.compile(
-            optimizer=tf.keras.optimizers.AdamW(
-                learning_rate=hp.Float('learning_rate', 1e-4, 1e-2, sampling='log'),
-                weight_decay=hp.Float('weight_decay', 1e-5, 1e-3, sampling='log')
-            ),
-            loss='sparse_categorical_crossentropy', 
-            metrics=['accuracy']
-        )
-        return model
-
-    def fit(self, hp, model, *args, **kwargs):
-        return model.fit(
-            *args,
-            **kwargs,
-            callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True, verbose=1),
-                       tf.keras.callbacks.ModelCheckpoint('caption_model.h5', save_best_only=True, save_weights_only=True, monitor='val_loss'),
-                       TensorBoard(log_dir='logs/fit/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), histogram_freq=1, write_graph=True, write_images=True)]
-        )
-
-tuner = RandomSearch(
-    MyHyperModel(),
-    objective='val_loss',
-    max_trials=10,
-    executions_per_trial=1,
-    directory='my_dir',
-    project_name='hparam_tuning'
-)
-
-tuner.search(train_frames, train_captions, validation_data=(val_frames, val_captions), epochs=10, batch_size=32)
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
+plt.title('Model accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.savefig('accuracy_plot.png')  # Save the plot as a PNG image
+plt.show()
