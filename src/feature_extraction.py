@@ -9,6 +9,7 @@ import pickle as pkl
 import os
 from preprocessing import ClipsCaptions
 from tensorflow.keras.utils import plot_model
+import matplotlib.pyplot as plt
 
 
 # Preprocess Video Frames
@@ -105,12 +106,12 @@ train_data = tf.data.Dataset.from_generator(
     train_generator,
     output_types=output_types,
     output_shapes=output_shapes
-).batch(24)
+).batch(15)
 val_data = tf.data.Dataset.from_generator(
     val_generator,
     output_types=output_types,
     output_shapes=output_shapes
-).batch(24)
+).batch(15)
 
 
 # Prefetch
@@ -121,17 +122,16 @@ val_data = val_data.prefetch(tf.data.experimental.AUTOTUNE)
 # Model Checkpoint and LR Scheduler
 model_checkpoint = tf.keras.callbacks.ModelCheckpoint('fe_model.h5', save_best_only=True, monitor='val_loss', mode='min', verbose=1)
 reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(factor=0.1, patience=2, verbose=1)
-earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, verbose=1)
+earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=4, verbose=1)
 history = autoencoder.fit(train_data, epochs=35, validation_data=val_data, callbacks=[model_checkpoint, reduce_lr, earlystop], verbose=1)
 
 plot_model(autoencoder, to_file='architecture.png', show_shapes=True, show_layer_names=True)
 autoencoder.save('Feature_extract.h5')
 
-plt.plot(history.history['accuracy'])
-plt.plot(history.history['val_accuracy'])
-plt.title('Model accuracy')
-plt.ylabel('Accuracy')
+plt.plot(history.history['mae'])
+plt.plot(history.history['val_mae'])
+plt.title('Model: Mean Absolute Error')
+plt.ylabel('Mean Absolute Error')
 plt.xlabel('Epoch')
 plt.legend(['Train', 'Validation'], loc='upper left')
-plt.savefig('accuracy_plot.png')  # Save the plot as a PNG image
-plt.show()
+plt.savefig('fe_accuracy_plot.png')  # Save the plot as a PNG image
