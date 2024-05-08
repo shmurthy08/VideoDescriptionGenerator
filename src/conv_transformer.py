@@ -77,11 +77,10 @@ def preprocess_captions(captions, word_index, max_length=20):
     padded_captions = pad_sequences(tokenized_captions_flat, maxlen=max_length, padding='post', truncating='post')
     return np.array(padded_captions).reshape(len(captions), -1, max_length)
 
-
-train_captios_data = [sample.captions for sample in train_dataset]  # Extract captions from each sample
+# Prepare training data
+train_captions_data = [sample.captions for sample in train_dataset]
 train_captions = preprocess_captions(train_captions_data, word_index)
 train_frames = np.array([preprocess_frames(sample.frames) for sample in train_dataset])
-
 
 # Prepare validation data
 val_captions_data = [sample.captions for sample in val_dataset]
@@ -497,7 +496,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
 
 
 class VideoCaptioningModel(Model):
-        """
+    """
     A model for video captioning using a combination of ConvLSTM, Transformer Encoder, and Transformer Decoder.
 
     Args:
@@ -520,7 +519,7 @@ class VideoCaptioningModel(Model):
         transformer_encoder,
         transformer_decoder,
         num_captions_per_video=5,
-    ):
+        ):
         super().__init__()
         self.conv_lstm_extractor = conv_lstm_extractor
         self.encoder = transformer_encoder

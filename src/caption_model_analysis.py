@@ -52,6 +52,6 @@ caption_model.load_weights('caption_model_weights.h5')
 # Predict captions using caption_model
 # Note: start token is startseq and end token is endseq
 def predict_captions(model, frames, seq_len=15):
-    
+    ...
     
 
