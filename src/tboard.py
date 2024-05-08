@@ -13,4 +13,4 @@ elif inputs != 'y':
     exit(0)
 # Start tensorboard
 else: 
-    os.system(f'tensorboard --logdir=logs/hparam_tuning20240503-203819/ --bind_all')
+    os.system(f'tensorboard --logdir=logs/hparam_tuning/20240508-184042/ --bind_all')

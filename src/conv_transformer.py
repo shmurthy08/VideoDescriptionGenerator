@@ -9,7 +9,7 @@ import pickle as pkl
 import os
 import datetime
 import tensorflow as tf
-import keras_tuner as kt
+import matplotlib.pyplot as plt
 
 from tensorflow.keras.layers import (
     ConvLSTM2D, Input, Conv3D, LayerNormalization, Conv2D, Flatten, Dense,
@@ -101,7 +101,7 @@ batch_size = 32
 
 # Call ConvLSTM Feature Extraction Model
 def conv_lstm_extractor():
-    fe_model = load_model('fe_model.h5')
+    fe_model = load_model('Feature_extract.h5')
 
     # Freeze all layers
     for layer in fe_model.layers:
@@ -711,9 +711,9 @@ num_warmup_steps = num_train_steps // batch_size
 
 ex_model = conv_lstm_extractor()
 
-encoder = TransformerEncoder(embed_dim=1152, num_heads=3, drop_rate=0.1)
+encoder = TransformerEncoder(embed_dim=1408, num_heads=5, drop_rate=0.1)
 
-decoder = TransformerDecoder(embed_dim=1152, ff_dim=1536, num_heads=3, vocab_size=vocabulary_size, drop_rate=0.1)
+decoder = TransformerDecoder(embed_dim=1408, ff_dim=3584, num_heads=5, vocab_size=vocabulary_size, drop_rate=0.1)
 
 caption_model = VideoCaptioningModel(ex_model, encoder, decoder)
 caption_model.compile(
@@ -723,11 +723,12 @@ caption_model.compile(
             warmup_steps=num_warmup_steps,
             total_steps=num_train_steps
         ),
-        weight_decay=1e-5
+        weight_decay=1e-4
     ),
     loss='sparse_categorical_crossentropy',
     metrics=['accuracy']
 )
+
 
 history = caption_model.fit(
     train_data,
@@ -740,10 +741,10 @@ history = caption_model.fit(
     ],
 )
 
-plt.plot(history.history['accuracy'])
-plt.plot(history.history['val_accuracy'])
+plt.plot(history.history['acc'])
+plt.plot(history.history['val_acc'])
 plt.title('Model accuracy')
 plt.ylabel('Accuracy')
 plt.xlabel('Epoch')
 plt.legend(['Train', 'Validation'], loc='upper left')
-plt.savefig('accuracy_plot.png')  # Save the plot as a PNG image
+plt.savefig('caption_model_accuracy_plot.png')  

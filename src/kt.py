@@ -1,11 +1,21 @@
-from conv_transformer import TransformerEncoder, TransformerDecoder, VideoCaptioningModel, def_conv_lstm_extractor, LRSchedule
+from conv_transformer import TransformerEncoder, TransformerDecoder, VideoCaptioningModel, conv_lstm_extractor, LRSchedule
 import pickle as pkl
 import numpy as np
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 import tensorflow as tf
 import datetime
 from tensorflow.keras.callbacks import TensorBoard
-import kerastuner as kt
+import keras_tuner as kt
+
+# Params
+num_frames = 5
+frame_height = 224
+frame_width = 224
+num_channels = 3
+
+epoch_num = 75
+batch_size = 32
+
 
 
 with open('word_index.pkl', 'rb') as f:
@@ -112,6 +122,8 @@ val_data = tf.data.Dataset.from_generator(
 train_data = train_data.prefetch(tf.data.experimental.AUTOTUNE)
 val_data = val_data.prefetch(tf.data.experimental.AUTOTUNE)
 
+num_train_steps = (len(train_dataset) // batch_size) * epoch_num
+num_warmup_steps = num_train_steps // batch_size
 
 
 class MyHyperModel(kt.HyperModel):
@@ -154,10 +166,10 @@ class MyHyperModel(kt.HyperModel):
 
 tuner = kt.BayesianOptimization(
     MyHyperModel(),
-    objective=kt.Objective('val_loss', "min"),
+    objective=kt.Objective('val_acc', "max"),
     executions_per_trial=1,
     directory='bayesian_dir',
-    project_name='fixed_multilayer_hparam_tuning_acc'
+    project_name='tuning_multilayer_hparam_tuning_acc'
 )
 
 
