@@ -621,6 +621,61 @@ class VideoCaptioningModel(Model):
     @property
     def metrics(self):
         return [self.loss_tracker, self.acc_tracker]
+    def call(self, inputs, training=False):
+        """
+        Forward pass for the video captioning model.
+
+        Args:
+        inputs (tf.Tensor): The input video frames of shape (batch_size, num_frames, frame_height, frame_width, num_channels).
+        training (bool, optional): Flag to indicate whether the model is in training mode or inference mode. Defaults to False.
+
+        Returns:
+        tf.Tensor: The generated captions for each video.
+        """
+        if training:
+            frames, captions = inputs
+            features = self.conv_lstm_extractor(frames, training=training)
+            encoder_output = self.encoder(features, training=training)
+            decoder_output = self.decoder(captions, encoder_output, training=training)
+            return decoder_output
+        elif not training:
+            frames = inputs
+            features = self.conv_lstm_extractor(frames, training=training)
+            encoder_output = self.encoder(features, training=training)
+            batch_size = tf.shape(inputs)[0]
+            start_token_idx = word_index['startseq']
+            decoder_input = tf.fill([batch_size, 1], start_token_idx)
+            captions = []
+
+            for _ in range(20):  # Assuming a maximum length of 20 for the captions
+                decoder_output = self.decoder(decoder_input, encoder_output, training=False)
+                next_word_idx = tf.argmax(decoder_output[:, -1:, :], axis=-1, output_type=tf.int32)
+                print(next_word_idx, flush=True)
+                captions.append(next_word_idx)
+                decoder_input = tf.concat([decoder_input, next_word_idx], axis=1)
+
+            return tf.stack(captions, axis=1)
+        else:
+            raise ValueError("Training mode requires a different setup for batch processing of captions.")
+    def get_config(self):
+        return {
+            "conv_lstm_extractor": tf.keras.utils.serialize_keras_object(self.conv_lstm_extractor),
+            "transformer_encoder": tf.keras.utils.serialize_keras_object(self.encoder),
+            "transformer_decoder": tf.keras.utils.serialize_keras_object(self.decoder),
+            "num_captions_per_video": self.num_captions_per_video
+        }
+
+    @classmethod
+    def from_config(cls, config):
+        # Here, you need to ensure that the objects are correctly instantiated from their configs
+        conv_lstm_extractor = tf.keras.utils.deserialize_keras_object(config['conv_lstm_extractor'])
+        transformer_encoder = tf.keras.utils.deserialize_keras_object(config['transformer_encoder'])
+        transformer_decoder = tf.keras.utils.deserialize_keras_object(config['transformer_decoder'])
+        num_captions_per_video = config['num_captions_per_video']
+        
+        return cls(conv_lstm_extractor, transformer_encoder, transformer_decoder, num_captions_per_video)
+
+
 
 # Learning Rate Scheduler for the optimizer
 class LRSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -706,45 +761,45 @@ val_data = val_data.prefetch(tf.data.experimental.AUTOTUNE)
 
 # Define Model
 # Create a learning rate schedule
-num_train_steps = (len(train_dataset) // batch_size) * epoch_num
-num_warmup_steps = num_train_steps // batch_size
+# num_train_steps = (len(train_dataset) // batch_size) * epoch_num
+# num_warmup_steps = num_train_steps // batch_size
 
-ex_model = conv_lstm_extractor()
+# ex_model = conv_lstm_extractor()
 
-encoder = TransformerEncoder(embed_dim=1408, num_heads=5, drop_rate=0.1)
+# encoder = TransformerEncoder(embed_dim=1408, num_heads=5, drop_rate=0.1)
 
-decoder = TransformerDecoder(embed_dim=1408, ff_dim=3584, num_heads=5, vocab_size=vocabulary_size, drop_rate=0.1)
+# decoder = TransformerDecoder(embed_dim=1408, ff_dim=3584, num_heads=5, vocab_size=vocabulary_size, drop_rate=0.1)
 
-caption_model = VideoCaptioningModel(ex_model, encoder, decoder)
-caption_model.compile(
-    optimizer=tf.keras.optimizers.AdamW(
-        LRSchedule(
-            post_warmup_learning_rate=1e-4,
-            warmup_steps=num_warmup_steps,
-            total_steps=num_train_steps
-        ),
-        weight_decay=1e-4
-    ),
-    loss='sparse_categorical_crossentropy',
-    metrics=['accuracy']
-)
+# caption_model = VideoCaptioningModel(ex_model, encoder, decoder)
+# caption_model.compile(
+#     optimizer=tf.keras.optimizers.AdamW(
+#         LRSchedule(
+#             post_warmup_learning_rate=1e-4,
+#             warmup_steps=num_warmup_steps,
+#             total_steps=num_train_steps
+#         ),
+#         weight_decay=1e-4
+#     ),
+#     loss='sparse_categorical_crossentropy',
+#     metrics=['accuracy']
+# )
 
 
-history = caption_model.fit(
-    train_data,
-    validation_data=val_data,
-    epochs=epoch_num,
-    callbacks=[
-        tf.keras.callbacks.EarlyStopping(patience=9, restore_best_weights=False, monitor='val_loss', verbose=1),
-        tf.keras.callbacks.ModelCheckpoint('caption_model_weights.h5', save_best_only=True, save_weights_only=True, monitor='val_loss', verbose=1),
-        TensorBoard(log_dir='logs/caption_final_model/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), histogram_freq=1, write_graph=True, write_images=True)
-    ],
-)
+# history = caption_model.fit(
+#     train_data,
+#     validation_data=val_data,
+#     epochs=1,
+#     callbacks=[
+#         tf.keras.callbacks.EarlyStopping(patience=9, restore_best_weights=False, monitor='val_loss', verbose=1),
+#         tf.keras.callbacks.ModelCheckpoint('DELETE_caption_model_weights.h5', save_best_only=True, save_weights_only=True, monitor='val_loss', verbose=1),
+#         TensorBoard(log_dir='logs/DELETE_caption_final_model/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), histogram_freq=1, write_graph=True, write_images=True)
+#     ],
+# )
 
-plt.plot(history.history['acc'])
-plt.plot(history.history['val_acc'])
-plt.title('Model accuracy')
-plt.ylabel('Accuracy')
-plt.xlabel('Epoch')
-plt.legend(['Train', 'Validation'], loc='upper left')
-plt.savefig('caption_model_accuracy_plot.png')  
+# plt.plot(history.history['acc'])
+# plt.plot(history.history['val_acc'])
+# plt.title('Model accuracy')
+# plt.ylabel('Accuracy')
+# plt.xlabel('Epoch')
+# plt.legend(['Train', 'Validation'], loc='upper left')
+# plt.savefig('caption_model_accuracy_plot.png')  
