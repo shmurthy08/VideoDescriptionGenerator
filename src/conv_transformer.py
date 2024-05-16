@@ -10,6 +10,8 @@ import os
 import datetime
 import tensorflow as tf
 import matplotlib.pyplot as plt
+# Import BLEU Score
+from nltk.translate.bleu_score import corpus_bleu
 
 from tensorflow.keras.layers import (
     ConvLSTM2D, Input, Conv3D, LayerNormalization, Conv2D, Flatten, Dense,
@@ -39,6 +41,10 @@ with open('train_dataset.pkl', 'rb') as f:
 with open('val_dataset.pkl', 'rb') as f:
     val_dataset = pkl.load(f)
 
+# Print the startseq token index and word
+print(f"Index for 'startseq': {word_index['startseq']}")
+print(f"Word for index 1: {index_word[1]}")
+
 # Preprocess Video Frames
 def preprocess_frames(frames):
     '''
@@ -49,14 +55,14 @@ def preprocess_frames(frames):
     return resized_frames
 
 # Preprocess Captions
-def preprocess_captions(captions, word_index, max_length=20):
+def preprocess_captions(captions, word_index, max_length=10):
     """
     Preprocess list of captions for training: Lowercase, tokenize using word_index, and pad sequences.
 
     Args:
     captions: List of list of captions (2D list where each sublist contains captions for one video).
     word_index: Dictionary mapping words to indices.
-    max_length: Maximum length of tokenized caption sequences. Defaults to 20.
+    max_length: Maximum length of tokenized caption sequences. Defaults to 10.
 
     Returns:
     tokenized_captions: 2D numpy array of padded, tokenized captions.
@@ -87,7 +93,7 @@ val_captions_data = [sample.captions for sample in val_dataset]
 val_captions = preprocess_captions(val_captions_data, word_index)
 val_frames = np.array([preprocess_frames(sample.frames) for sample in val_dataset])
 
-
+print(val_captions[0][0])
 
 # Parameters
 num_frames = 5
@@ -245,32 +251,32 @@ class TransformerEncoder(tf.keras.layers.Layer):
             The output tensor after the forward pass.
         '''
         inputs = self.dense(inputs)
-        inputs = self.drop1(inputs)
+        inputs = self.drop1(inputs, training=training)
         inputs = self.layernorm1(inputs)
         inputs = self.vidpos(inputs)
         
         attn_out = self.attn1(query=inputs, value=inputs, key=inputs, attention_mask=None, training=training)
-        attn_out = self.drop2(attn_out)
+        attn_out = self.drop2(attn_out, training=training)
         attn_out = self.layernorm2(attn_out + inputs)
         
         attn_out2 = self.attn2(query=attn_out, value=attn_out, key=attn_out, attention_mask=None, training=training)
-        attn_out2 = self.drop3(attn_out2)
+        attn_out2 = self.drop3(attn_out2, training=training)
         attn_out2 = self.layernorm3(attn_out2 + attn_out)
         
         attn_out3 = self.attn3(query=attn_out2, value=attn_out2, key=attn_out2, attention_mask=None, training=training)
-        attn_out3 = self.drop4(attn_out3)
+        attn_out3 = self.drop4(attn_out3, training=training)
         attn_out3 = self.layernorm4(attn_out3 + attn_out2)
         
         attn_out4 = self.attn4(query=attn_out3, value=attn_out3, key=attn_out3, attention_mask=None, training=training)
-        attn_out4 = self.drop5(attn_out4)
+        attn_out4 = self.drop5(attn_out4, training=training)
         attn_out4 = self.layernorm5(attn_out4 + attn_out3)
         
         attn_out5 = self.attn5(query=attn_out4, value=attn_out4, key=attn_out4, attention_mask=None, training=training)
-        attn_out5 = self.drop6(attn_out5)
+        attn_out5 = self.drop6(attn_out5, training=training)
         attn_out5 = self.layernorm6(attn_out5 + attn_out4)
         
         attn_out6 = self.attn6(query=attn_out5, value=attn_out5, key=attn_out5, attention_mask=None, training=training)
-        attn_out6 = self.drop7(attn_out6)
+        attn_out6 = self.drop7(attn_out6, training=training)
         attn_out6 = self.layernorm7(attn_out6 + attn_out5)
 
         return attn_out6
@@ -408,7 +414,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
         self.ff_nn1 = Dense(ff_dim, activation='relu')
         self.ff_nn2 = Dense(embed_dim)
         self.ff_nn3 = Dense(vocab_size, activation='softmax')
-        self.embed = PositionalEmbedding(embed_dim=embed_dim, vocab_size=vocabulary_size, seq_len=20)
+        self.embed = PositionalEmbedding(embed_dim=embed_dim, vocab_size=vocabulary_size, seq_len=10)
         self.masking = True
     
     def call(self, inputs, encoder_out, training, mask=None):
@@ -425,7 +431,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
             tf.Tensor: The final output tensor.
         """
         inputs = self.embed(inputs)
-        inputs = self.drop1(inputs)
+        inputs = self.drop1(inputs, training=training)
         inputs = self.layernorm0(inputs)
         causal_mask = self.causal_attn_mask(inputs)
         combo_mask = None
@@ -437,32 +443,32 @@ class TransformerDecoder(tf.keras.layers.Layer):
             
         attn_out1 = self.attn1(query=inputs, value=inputs, key=inputs, attention_mask=combo_mask,  
                                training=training)
-        attn_out1 = self.drop2(attn_out1)
+        attn_out1 = self.drop2(attn_out1, training=training)
         out1 = self.layernorm1(attn_out1 + inputs)
         
         attn_out2 = self.attn2(query=out1, value=encoder_out, key=encoder_out, attention_mask=pad_mask, 
                                training=training)
-        attn_out2 = self.drop3(attn_out2)
+        attn_out2 = self.drop3(attn_out2, training=training)
         out2 = self.layernorm2(attn_out2 + out1)
         
         attn_out3 = self.attn3(query=out2, value=out2, key=out2, attention_mask=pad_mask,
                                 training=training)
-        attn_out3 = self.drop4(attn_out3)
+        attn_out3 = self.drop4(attn_out3, training=training)
         out3 = self.layernorm3(attn_out3 + out2)
         
         attn_out4 = self.attn4(query=out3, value=out3, key=out3, attention_mask=pad_mask,
                                 training=training)
-        attn_out4 = self.drop5(attn_out4)
+        attn_out4 = self.drop5(attn_out4, training=training)
         out4 = self.layernorm4(attn_out4 + out3)
         
         attn_out5 = self.attn5(query=out4, value=out4, key=out4, attention_mask=pad_mask,
                                 training=training)
-        attn_out5 = self.drop6(attn_out5)
+        attn_out5 = self.drop6(attn_out5, training=training)
         out5 = self.layernorm5(attn_out5 + out4)
         
         attn_out6 = self.attn6(query=out5, value=out5, key=out5, attention_mask=pad_mask,
                                 training=training)
-        attn_out6 = self.drop7(attn_out6)
+        attn_out6 = self.drop7(attn_out6, training=training)
         out6 = self.layernorm6(attn_out6 + out5)
         
         ff_out1 = self.ff_nn1(out6)
@@ -493,6 +499,14 @@ class TransformerDecoder(tf.keras.layers.Layer):
             tf.constant([1, 1], dtype=tf.int32)
         ], axis=0)
         return tf.tile(mask, multiply)        
+
+
+
+# Create a StaticHashTable for index to word mapping
+keys_tensor = tf.constant(list(index_word.keys()), dtype=tf.int64)
+vals_tensor = tf.constant(list(index_word.values()), dtype=tf.string)
+table_initializer = tf.lookup.KeyValueTensorInitializer(keys_tensor, vals_tensor)
+index_word_table = tf.lookup.StaticHashTable(table_initializer, default_value="<unk>")
 
 
 class VideoCaptioningModel(Model):
@@ -536,13 +550,26 @@ class VideoCaptioningModel(Model):
         return tf.reduce_sum(loss) / tf.reduce_sum(mask)
 
     def calculate_accuracy(self, y_true, y_pred, mask):
-        # Ensure y_true is cast to int32 to match the output type of tf.argmax, which is int64 by default
+        # Ensure y_true is cast to int64 to match the output type of tf.argmax, which is int64 by default
         y_true = tf.cast(y_true, dtype=tf.int64)
-        accuracy = tf.equal(y_true, tf.argmax(y_pred, axis=2))
+        # Get the predicted token indices
+        y_pred_indices = tf.argmax(y_pred, axis=2)
+        # Calculate where the predictions match the true values
+        accuracy = tf.equal(y_true, y_pred_indices)
+        # Apply the mask to ignore padding tokens
         accuracy = tf.math.logical_and(mask, accuracy)
+        # Cast accuracy to float for summation
         accuracy = tf.cast(accuracy, dtype=tf.float32)
         mask = tf.cast(mask, dtype=tf.float32)
+        # Calculate the mean accuracy over the masked tokens
+        
+        # Print true and predicted token indices
+        tf.print("True token indices:\n", y_true)
+        tf.print("Predicted token indices:\n", y_pred_indices)
+        tf.print("Masked accuracy values:\n", accuracy)
+        
         return tf.reduce_sum(accuracy) / tf.reduce_sum(mask)
+
 
     def train_step(self, batch_data):
         batch_frames, batch_seq = batch_data
@@ -593,87 +620,122 @@ class VideoCaptioningModel(Model):
         batch_loss = 0
         batch_acc = 0
 
-        video_features = self.conv_lstm_extractor(batch_frames)
+        video_features = self.conv_lstm_extractor(batch_frames, training=False)
         
+        all_pred_words = []
+
         for i in range(self.num_captions_per_video):
             encoder_out = self.encoder(video_features, training=False)
             batch_seq_inp = batch_seq[:, i, :-1]
+            tf.print("TEST BATCH SEQ INP: ", batch_seq_inp)
             batch_seq_true = batch_seq[:, i, 1:]
+            tf.print("TEST BATCH SEQ TRUE: ", batch_seq_true)
             mask = tf.math.not_equal(batch_seq_true, 0)
             batch_seq_pred = self.decoder(
                 batch_seq_inp, encoder_out, training=False, mask=mask
             )
+            tf.print("TEST PRED: ",  batch_seq_pred)
             caption_loss = self.calculate_loss(batch_seq_true, batch_seq_pred, mask)
             caption_acc = self.calculate_accuracy(batch_seq_true, batch_seq_pred, mask)
 
             batch_loss += caption_loss
             batch_acc += caption_acc
-        
+
+            # Convert predicted token indices to words using the StaticHashTable
+            pred_token_indices = tf.argmax(batch_seq_pred, axis=-1)
+            pred_words = index_word_table.lookup(pred_token_indices)
+            pred_captions = tf.strings.reduce_join(pred_words, axis=1, separator=' ')
+            tf.print("PREDICTED CAPTION: ", pred_captions)
+            
         loss = batch_loss
         batch_acc /= float(self.num_captions_per_video)
         
         self.loss_tracker.update_state(loss)
         self.acc_tracker.update_state(batch_acc)
+
         return {
             "loss": self.loss_tracker.result(),
             "acc": self.acc_tracker.result(),
         }
-    @property
-    def metrics(self):
-        return [self.loss_tracker, self.acc_tracker]
-    def call(self, inputs, training=False):
-        """
-        Forward pass for the video captioning model.
 
-        Args:
-        inputs (tf.Tensor): The input video frames of shape (batch_size, num_frames, frame_height, frame_width, num_channels).
-        training (bool, optional): Flag to indicate whether the model is in training mode or inference mode. Defaults to False.
+    def predict(self, batch_frames, temperature=1.0):
+        video_features = self.conv_lstm_extractor(batch_frames, training=False)
+        batch_size = tf.shape(video_features)[0]
+        start_token = tf.constant(word_index['startseq'], shape=(batch_size, 1), dtype=tf.int32)
+        result = start_token
 
-        Returns:
-        tf.Tensor: The generated captions for each video.
-        """
-        if training:
-            frames, captions = inputs
-            features = self.conv_lstm_extractor(frames, training=training)
-            encoder_output = self.encoder(features, training=training)
-            decoder_output = self.decoder(captions, encoder_output, training=training)
-            return decoder_output
-        elif not training:
-            frames = inputs
-            features = self.conv_lstm_extractor(frames, training=training)
-            encoder_output = self.encoder(features, training=training)
-            batch_size = tf.shape(inputs)[0]
-            start_token_idx = word_index['startseq']
-            decoder_input = tf.fill([batch_size, 1], start_token_idx)
-            captions = []
-
-            for _ in range(20):  # Assuming a maximum length of 20 for the captions
-                decoder_output = self.decoder(decoder_input, encoder_output, training=False)
-                next_word_idx = tf.argmax(decoder_output[:, -1:, :], axis=-1, output_type=tf.int32)
-                print(next_word_idx, flush=True)
-                captions.append(next_word_idx)
-                decoder_input = tf.concat([decoder_input, next_word_idx], axis=1)
-
-            return tf.stack(captions, axis=1)
-        else:
-            raise ValueError("Training mode requires a different setup for batch processing of captions.")
-    def get_config(self):
-        return {
-            "conv_lstm_extractor": tf.keras.utils.serialize_keras_object(self.conv_lstm_extractor),
-            "transformer_encoder": tf.keras.utils.serialize_keras_object(self.encoder),
-            "transformer_decoder": tf.keras.utils.serialize_keras_object(self.decoder),
-            "num_captions_per_video": self.num_captions_per_video
-        }
-
-    @classmethod
-    def from_config(cls, config):
-        # Here, you need to ensure that the objects are correctly instantiated from their configs
-        conv_lstm_extractor = tf.keras.utils.deserialize_keras_object(config['conv_lstm_extractor'])
-        transformer_encoder = tf.keras.utils.deserialize_keras_object(config['transformer_encoder'])
-        transformer_decoder = tf.keras.utils.deserialize_keras_object(config['transformer_decoder'])
-        num_captions_per_video = config['num_captions_per_video']
+        encoder_out = self.encoder(video_features)
+        # Visualize Frame
+        plt.figure(figsize=(10, 10))
+        for i in range(5):
+            plt.subplot(1, 5, i + 1)
+            plt.imshow(batch_frames[0, i])
+            plt.axis('off')
+        plt.savefig('frame.png')
         
-        return cls(conv_lstm_extractor, transformer_encoder, transformer_decoder, num_captions_per_video)
+        for i in range(10):
+            dec_output = self.decoder(result, encoder_out, training=False)
+            print("DEC OUTPUT: ", dec_output)
+            
+            # Get the last timestep probabilities
+            last_timestep_probs = dec_output[:, -1, :].numpy()[0]
+            print("LAST TIMESTEP PROBABILITIES: ", last_timestep_probs)
+            
+            # Sort probabilities and get indices
+            sorted_indices = np.argsort(-last_timestep_probs)
+            sorted_probs = last_timestep_probs[sorted_indices]
+            
+            # Print sorted probabilities and corresponding words
+            for idx, prob in zip(sorted_indices, sorted_probs):
+                word = index_word.get(idx, '<unk>')
+                print(f"Index: {idx}, Word: {word}, Probability: {prob}")
+
+            # Argmax for word prediction
+            dec_output_argmax = tf.argmax(dec_output, axis=-1, output_type=tf.int32)
+            print("DEC OUTPUT ARGMAX: ", dec_output_argmax)
+            
+            # Get the last word in the sequence
+            dec_output = dec_output_argmax[:, -1:]
+            print("DEC OUTPUT SLICED: ", dec_output)
+            
+            # Concatenate with the result
+            result = tf.concat([result, dec_output], axis=-1)
+            print("RESULT: ", result)
+            
+            # Print the corresponding word for each predicted index
+            word_prediction = [index_word.get(i, '<unk>') for i in dec_output.numpy().flatten()]
+            print("PREDICTED WORD: ", word_prediction)
+        
+        # Convert final array of token indices to words
+        result = result.numpy()
+        predicted_caption = [index_word.get(i, '<unk>') for i in result[0]]  # Convert indices to words
+        predicted_caption = ' '.join(predicted_caption)  # Join words to form the caption
+        print("PREDICTED CAPTION: ", predicted_caption)
+        return result, predicted_caption
+
+
+        @property
+        def metrics(self):
+            return [self.loss_tracker, self.acc_tracker]
+        
+
+        def get_config(self):
+            return {
+                "conv_lstm_extractor": tf.keras.utils.serialize_keras_object(self.conv_lstm_extractor),
+                "transformer_encoder": tf.keras.utils.serialize_keras_object(self.encoder),
+                "transformer_decoder": tf.keras.utils.serialize_keras_object(self.decoder),
+                "num_captions_per_video": self.num_captions_per_video
+            }
+
+        @classmethod
+        def from_config(cls, config):
+            # Here, you need to ensure that the objects are correctly instantiated from their configs
+            conv_lstm_extractor = tf.keras.utils.deserialize_keras_object(config['conv_lstm_extractor'])
+            transformer_encoder = tf.keras.utils.deserialize_keras_object(config['transformer_encoder'])
+            transformer_decoder = tf.keras.utils.deserialize_keras_object(config['transformer_decoder'])
+            num_captions_per_video = config['num_captions_per_video']
+            
+            return cls(conv_lstm_extractor, transformer_encoder, transformer_decoder, num_captions_per_video)
 
 
 
@@ -739,7 +801,7 @@ def val_generator():
 
 # Define output types and shapes to match actual data
 output_types = (tf.float32, tf.int32)
-output_shapes = (tf.TensorShape([num_frames, frame_height, frame_width, num_channels]), tf.TensorShape([5, 20]))
+output_shapes = (tf.TensorShape([num_frames, frame_height, frame_width, num_channels]), tf.TensorShape([5, 10]))
 
 # Create the dataset from the generator
 train_data = tf.data.Dataset.from_generator(
@@ -761,40 +823,36 @@ val_data = val_data.prefetch(tf.data.experimental.AUTOTUNE)
 
 # Define Model
 # Create a learning rate schedule
-# num_train_steps = (len(train_dataset) // batch_size) * epoch_num
-# num_warmup_steps = num_train_steps // batch_size
+num_train_steps = (len(train_dataset) // batch_size) * epoch_num
+num_warmup_steps = num_train_steps // batch_size
 
-# ex_model = conv_lstm_extractor()
+ex_model = conv_lstm_extractor()
 
-# encoder = TransformerEncoder(embed_dim=1408, num_heads=5, drop_rate=0.1)
+encoder = TransformerEncoder(embed_dim=1408, num_heads=5, drop_rate=0.1)
 
-# decoder = TransformerDecoder(embed_dim=1408, ff_dim=3584, num_heads=5, vocab_size=vocabulary_size, drop_rate=0.1)
+decoder = TransformerDecoder(embed_dim=1408, ff_dim=3584, num_heads=5, vocab_size=vocabulary_size, drop_rate=0.1)
 
-# caption_model = VideoCaptioningModel(ex_model, encoder, decoder)
-# caption_model.compile(
-#     optimizer=tf.keras.optimizers.AdamW(
-#         LRSchedule(
-#             post_warmup_learning_rate=1e-4,
-#             warmup_steps=num_warmup_steps,
-#             total_steps=num_train_steps
-#         ),
-#         weight_decay=1e-4
-#     ),
-#     loss='sparse_categorical_crossentropy',
-#     metrics=['accuracy']
-# )
+caption_model = VideoCaptioningModel(ex_model, encoder, decoder)
+caption_model.compile(
+    optimizer=tf.keras.optimizers.AdamW(
+        LRSchedule(
+            post_warmup_learning_rate=1e-4,
+            warmup_steps=num_warmup_steps,
+            total_steps=num_train_steps
+        ),
+        weight_decay=1e-4
+    ),
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
 
+history = caption_model.fit(
+    train_data,
+    validation_data=val_data,
+    epochs=2,
 
-# history = caption_model.fit(
-#     train_data,
-#     validation_data=val_data,
-#     epochs=1,
-#     callbacks=[
-#         tf.keras.callbacks.EarlyStopping(patience=9, restore_best_weights=False, monitor='val_loss', verbose=1),
-#         tf.keras.callbacks.ModelCheckpoint('DELETE_caption_model_weights.h5', save_best_only=True, save_weights_only=True, monitor='val_loss', verbose=1),
-#         TensorBoard(log_dir='logs/DELETE_caption_final_model/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), histogram_freq=1, write_graph=True, write_images=True)
-#     ],
-# )
+)
+
 
 # plt.plot(history.history['acc'])
 # plt.plot(history.history['val_acc'])
@@ -803,3 +861,14 @@ val_data = val_data.prefetch(tf.data.experimental.AUTOTUNE)
 # plt.xlabel('Epoch')
 # plt.legend(['Train', 'Validation'], loc='upper left')
 # plt.savefig('caption_model_accuracy_plot.png')  
+
+# plot the first val_image
+plt.figure(figsize=(10, 10))
+for i in range(5):
+    plt.subplot(1, 5, i+1)
+    plt.imshow(val_frames[0][i])
+    plt.axis('off')
+plt.tight_layout()
+plt.savefig('val_image.png')
+
+caption_model.predict(val_frames[0].reshape(1, 5, 224, 224, 3))

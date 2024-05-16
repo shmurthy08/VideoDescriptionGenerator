@@ -43,40 +43,6 @@ def preprocess_frames(frames):
     return resized_frames
 
 test_frames = np.array([preprocess_frames(sample.frames) for sample in test_dataset])
-
-# Preprocess Captions
-def preprocess_captions(captions, word_index, max_length=20):
-    """
-    Preprocess list of captions for training: Lowercase, tokenize using word_index, and pad sequences.
-
-    Args:
-    captions: List of list of captions (2D list where each sublist contains captions for one video).
-    word_index: Dictionary mapping words to indices.
-    max_length: Maximum length of tokenized caption sequences. Defaults to 20.
-
-    Returns:
-    tokenized_captions: 2D numpy array of padded, tokenized captions.
-    """
-    # Tokenize and pad each caption
-    tokenized_captions = []
-    for caption_list in captions:
-        # Process each caption in the list of captions for one video
-        tokenized_caption_list = []
-        for caption in caption_list:
-            # Lowercase, split, and convert words to indices, using 0 for unknown words
-            tokens = [word_index.get(word.lower(), word_index['<unk>']) for word in caption.split()]
-            tokenized_caption_list.append(tokens)
-        tokenized_captions.append(tokenized_caption_list)
-
-    # Flatten the list and pad sequences
-    tokenized_captions_flat = [token for sublist in tokenized_captions for token in sublist]
-    padded_captions = pad_sequences(tokenized_captions_flat, maxlen=max_length, padding='post', truncating='post')
-    return np.array(padded_captions).reshape(len(captions), -1, max_length)
-
-# Prepare training data
-test_captions_data = [sample.captions for sample in test_dataset]
-test_captions = preprocess_captions(test_captions_data, word_index)
-
 # Define Model
 # Create a learning rate schedule
 num_test_steps = (len(test_dataset) // 75) * epoch_num
@@ -87,13 +53,34 @@ ex_model = conv_lstm_extractor()
 encoder = TransformerEncoder(embed_dim=1408, num_heads=5, drop_rate=0.1)
 decoder = TransformerDecoder(embed_dim=1408, ff_dim=3584, num_heads=5, vocab_size=vocabulary_size, drop_rate=0.1)
 caption_model = VideoCaptioningModel(ex_model, encoder, decoder)
-caption_model.build((test_frames.shape))
+caption_model.build(input_shape=(None, num_frames, frame_height, frame_width, num_channels))
 # Now load the weights
 caption_model.load_weights('caption_model_weights.h5')
 
 # Generate Captions
 # Generate Captions for the first set of frames in the test set
+first_test_frames = test_frames[0:32]
+print(first_test_frames.shape)
 
-predictions = caption_model((test_frames, test_captions), training=True, batch_size=batch_size)
+predictions = caption_model(first_test_frames, training=False)
+print(predictions.shape)
+def decode_captions(predictions):
+    '''
+    Given a batch of predictions, decode them into text captions.
+    '''
+    return predictions
 
-print(predictions)
+
+
+
+# # Plot the frames with the generated captions
+# fig, axes = plt.subplots(1, num_frames, figsize=(20, 5))
+
+# for i, ax in enumerate(axes):
+#     ax.imshow(first_test_frames[0, i])
+#     ax.set_title(decoded_captions[i])
+#     ax.axis('off')
+
+# plt.tight_layout()
+# plt.savefig('generated_captions.png')
+# plt.show()
