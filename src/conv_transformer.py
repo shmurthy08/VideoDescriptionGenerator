@@ -1,18 +1,16 @@
+import numpy as np
+import pickle as pkl
+import os
+import datetime
+import tensorflow as tf
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import Model, load_model, Sequential
 from preprocessing import ClipsCaptions
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.callbacks import TensorBoard
-import numpy as np
-import pickle as pkl
-import os
-import datetime
-import tensorflow as tf
-import matplotlib.pyplot as plt
-# Import BLEU Score
-from nltk.translate.bleu_score import corpus_bleu
 
+import matplotlib.pyplot as plt
 from tensorflow.keras.layers import (
     ConvLSTM2D, Input, Conv3D, LayerNormalization, Conv2D, Flatten, Dense,
     Embedding, BatchNormalization, Lambda, MultiHeadAttention, GlobalAveragePooling2D,
@@ -93,7 +91,6 @@ val_captions_data = [sample.captions for sample in val_dataset]
 val_captions = preprocess_captions(val_captions_data, word_index)
 val_frames = np.array([preprocess_frames(sample.frames) for sample in val_dataset])
 
-print(val_captions[0][0])
 
 # Parameters
 num_frames = 5
@@ -540,11 +537,10 @@ class VideoCaptioningModel(Model):
         self.decoder = transformer_decoder
         self.loss_tracker = tf.metrics.Mean(name="loss")
         self.acc_tracker = tf.metrics.Mean(name="accuracy")
-        self.num_captions_per_video = num_captions_per_video
         self.correct_order_tracker = tf.metrics.Mean(name="correct_order_words")
-        self.total_words_tracker = tf.metrics.Mean(name="total_words")  # Total words possible
-
-        
+        self.total_words_tracker = tf.metrics.Mean(name="total_words")
+        self.num_captions_per_video = num_captions_per_video
+        self.last_batch_frames = None  
 
     def calculate_loss(self, y_true, y_pred, mask):
         loss = self.compiled_loss(y_true, y_pred)
@@ -564,13 +560,7 @@ class VideoCaptioningModel(Model):
         # Cast accuracy to float for summation
         accuracy = tf.cast(accuracy, dtype=tf.float32)
         mask = tf.cast(mask, dtype=tf.float32)
-        # Calculate the mean accuracy over the masked tokens
-        
-        # Print true and predicted token indices
-        tf.print("True token indices:\n", y_true)
-        tf.print("Predicted token indices:\n", y_pred_indices)
-        tf.print("Masked accuracy values:\n", accuracy)
-        
+
         return tf.reduce_sum(accuracy) / tf.reduce_sum(mask)
 
     def calculate_correct_order_words(self, y_true, y_pred, mask):
@@ -588,10 +578,6 @@ class VideoCaptioningModel(Model):
         # Calculate the mean accuracy over the masked tokens
         correct_order_sum = tf.reduce_sum(correct_order)
         
-        # Print true and predicted token indices
-        tf.print("True token indices:\n", y_true)
-        tf.print("Predicted token indices:\n", y_pred_indices)
-        tf.print("Correct order values:\n", correct_order)
         total_words = tf.reduce_sum(mask)
 
         return correct_order_sum, total_words
@@ -693,62 +679,6 @@ class VideoCaptioningModel(Model):
             "total_words": self.total_words_tracker.result()
 
         }
-
-    def predict(self, batch_frames, temperature=1.0):
-        video_features = self.conv_lstm_extractor(batch_frames, training=False)
-        batch_size = tf.shape(video_features)[0]
-        start_token = tf.constant(word_index['startseq'], shape=(batch_size, 1), dtype=tf.int32)
-        result = start_token
-
-        encoder_out = self.encoder(video_features)
-        # Visualize Frame
-        plt.figure(figsize=(10, 10))
-        for i in range(5):
-            plt.subplot(1, 5, i + 1)
-            plt.imshow(batch_frames[0, i])
-            plt.axis('off')
-        plt.savefig('frame.png')
-        
-        for i in range(10):
-            dec_output = self.decoder(result, encoder_out, training=False)
-            print("DEC OUTPUT: ", dec_output)
-            
-            # Get the last timestep probabilities
-            last_timestep_probs = dec_output[:, -1, :].numpy()[0]
-            print("LAST TIMESTEP PROBABILITIES: ", last_timestep_probs)
-            
-            # Sort probabilities and get indices
-            sorted_indices = np.argsort(-last_timestep_probs)
-            sorted_probs = last_timestep_probs[sorted_indices]
-            
-            # Print sorted probabilities and corresponding words
-            for idx, prob in zip(sorted_indices, sorted_probs):
-                word = index_word.get(idx, '<unk>')
-                print(f"Index: {idx}, Word: {word}, Probability: {prob}")
-
-            # Argmax for word prediction
-            dec_output_argmax = tf.argmax(dec_output, axis=-1, output_type=tf.int32)
-            print("DEC OUTPUT ARGMAX: ", dec_output_argmax)
-            
-            # Get the last word in the sequence
-            dec_output = dec_output_argmax[:, -1:]
-            print("DEC OUTPUT SLICED: ", dec_output)
-            
-            # Concatenate with the result
-            result = tf.concat([result, dec_output], axis=-1)
-            print("RESULT: ", result)
-            
-            # Print the corresponding word for each predicted index
-            word_prediction = [index_word.get(i, '<unk>') for i in dec_output.numpy().flatten()]
-            print("PREDICTED WORD: ", word_prediction)
-        
-        # Convert final array of token indices to words
-        result = result.numpy()
-        predicted_caption = [index_word.get(i, '<unk>') for i in result[0]]  # Convert indices to words
-        predicted_caption = ' '.join(predicted_caption)  # Join words to form the caption
-        print("PREDICTED CAPTION: ", predicted_caption)
-        return result, predicted_caption
-
 
         @property
         def metrics(self):
@@ -855,6 +785,7 @@ val_data = tf.data.Dataset.from_generator(
 # Prefetch
 train_data = train_data.prefetch(tf.data.experimental.AUTOTUNE)
 val_data = val_data.prefetch(tf.data.experimental.AUTOTUNE)
+
 
 
 # Define Model
