@@ -33,6 +33,7 @@ python3 conv_transformer.py
 ```
 ## Location of code:
 - All code is located in the `src/` directory.
+- All data is located in the `data/` directory.
 
 ## References:
 - [MSVD dataset](https://paperswithcode.com/dataset/msvd)
