@@ -12,7 +12,7 @@ The goal of this project is to create a model, leveraging ConvLSTM and Transform
 ## Install necessary libraries
 ```bash
 chmod 755 install.sh
-install.sh
+./install.sh
 ```
 
 ## Steps to run on Linux-based environment:
@@ -20,5 +20,6 @@ install.sh
 cd src/
 python3 preprocessing.py
 python3 data_splitting.py
-python3 model.py
+python3 feature_extraction.py
+python3 conv_transformer.py
 ```
