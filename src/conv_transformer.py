@@ -502,7 +502,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
 
 
 
-# Create a StaticHashTable for index to word mapping
+# Create a tensor-object for index to word mapping
 keys_tensor = tf.constant(list(index_word.keys()), dtype=tf.int64)
 vals_tensor = tf.constant(list(index_word.values()), dtype=tf.string)
 table_initializer = tf.lookup.KeyValueTensorInitializer(keys_tensor, vals_tensor)
@@ -541,6 +541,9 @@ class VideoCaptioningModel(Model):
         self.loss_tracker = tf.metrics.Mean(name="loss")
         self.acc_tracker = tf.metrics.Mean(name="accuracy")
         self.num_captions_per_video = num_captions_per_video
+        self.correct_order_tracker = tf.metrics.Mean(name="correct_order_words")
+        self.total_words_tracker = tf.metrics.Mean(name="total_words")  # Total words possible
+
         
 
     def calculate_loss(self, y_true, y_pred, mask):
@@ -569,6 +572,29 @@ class VideoCaptioningModel(Model):
         tf.print("Masked accuracy values:\n", accuracy)
         
         return tf.reduce_sum(accuracy) / tf.reduce_sum(mask)
+
+    def calculate_correct_order_words(self, y_true, y_pred, mask):
+        # Ensure y_true is cast to int64 to match the output type of tf.argmax
+        y_true = tf.cast(y_true, dtype=tf.int64)
+        # Get the predicted token indices
+        y_pred_indices = tf.argmax(y_pred, axis=2)
+        # Calculate where the predictions match the true values
+        correct_order = tf.equal(y_true, y_pred_indices)
+        # Apply the mask to ignore padding tokens
+        correct_order = tf.math.logical_and(mask, correct_order)
+        # Cast correct_order to float for summation
+        correct_order = tf.cast(correct_order, dtype=tf.float32)
+        mask = tf.cast(mask, dtype=tf.float32)
+        # Calculate the mean accuracy over the masked tokens
+        correct_order_sum = tf.reduce_sum(correct_order)
+        
+        # Print true and predicted token indices
+        tf.print("True token indices:\n", y_true)
+        tf.print("Predicted token indices:\n", y_pred_indices)
+        tf.print("Correct order values:\n", correct_order)
+        total_words = tf.reduce_sum(mask)
+
+        return correct_order_sum, total_words
 
 
     def train_step(self, batch_data):
@@ -619,6 +645,8 @@ class VideoCaptioningModel(Model):
         batch_frames, batch_seq = batch_data
         batch_loss = 0
         batch_acc = 0
+        batch_correct_order = 0
+        batch_total_words = 0
 
         video_features = self.conv_lstm_extractor(batch_frames, training=False)
         
@@ -627,19 +655,20 @@ class VideoCaptioningModel(Model):
         for i in range(self.num_captions_per_video):
             encoder_out = self.encoder(video_features, training=False)
             batch_seq_inp = batch_seq[:, i, :-1]
-            tf.print("TEST BATCH SEQ INP: ", batch_seq_inp)
             batch_seq_true = batch_seq[:, i, 1:]
-            tf.print("TEST BATCH SEQ TRUE: ", batch_seq_true)
             mask = tf.math.not_equal(batch_seq_true, 0)
             batch_seq_pred = self.decoder(
                 batch_seq_inp, encoder_out, training=False, mask=mask
             )
-            tf.print("TEST PRED: ",  batch_seq_pred)
             caption_loss = self.calculate_loss(batch_seq_true, batch_seq_pred, mask)
             caption_acc = self.calculate_accuracy(batch_seq_true, batch_seq_pred, mask)
+            correct_order, total_words = self.calculate_correct_order_words(batch_seq_true, batch_seq_pred, mask)
 
             batch_loss += caption_loss
             batch_acc += caption_acc
+            batch_correct_order += correct_order
+            batch_total_words += total_words
+
 
             # Convert predicted token indices to words using the StaticHashTable
             pred_token_indices = tf.argmax(batch_seq_pred, axis=-1)
@@ -649,13 +678,20 @@ class VideoCaptioningModel(Model):
             
         loss = batch_loss
         batch_acc /= float(self.num_captions_per_video)
-        
+        batch_correct_order /= float(self.num_captions_per_video)
+        batch_total_words /= float(self.num_captions_per_video)
+
         self.loss_tracker.update_state(loss)
         self.acc_tracker.update_state(batch_acc)
+        self.correct_order_tracker.update_state(batch_correct_order)
+        self.total_words_tracker.update_state(batch_total_words)
 
         return {
             "loss": self.loss_tracker.result(),
             "acc": self.acc_tracker.result(),
+            "correct_order_words": self.correct_order_tracker.result(),  
+            "total_words": self.total_words_tracker.result()
+
         }
 
     def predict(self, batch_frames, temperature=1.0):
@@ -716,7 +752,7 @@ class VideoCaptioningModel(Model):
 
         @property
         def metrics(self):
-            return [self.loss_tracker, self.acc_tracker]
+            return [self.loss_tracker, self.acc_tracker, self.correct_order_tracker, self.total_words_tracker]
         
 
         def get_config(self):
@@ -849,26 +885,18 @@ caption_model.compile(
 history = caption_model.fit(
     train_data,
     validation_data=val_data,
-    epochs=2,
+    epochs=15,
+    callbacks=[tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
+               tf.keras.callbacks.ModelCheckpoint('caption_model.h5', save_best_only=True, save_weights_only=True)],
 
 )
 
 
-# plt.plot(history.history['acc'])
-# plt.plot(history.history['val_acc'])
-# plt.title('Model accuracy')
-# plt.ylabel('Accuracy')
-# plt.xlabel('Epoch')
-# plt.legend(['Train', 'Validation'], loc='upper left')
-# plt.savefig('caption_model_accuracy_plot.png')  
+plt.plot(history.history['acc'])
+plt.plot(history.history['val_acc'])
+plt.title('Model accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.savefig('caption_model_accuracy_plot.png')  
 
-# plot the first val_image
-plt.figure(figsize=(10, 10))
-for i in range(5):
-    plt.subplot(1, 5, i+1)
-    plt.imshow(val_frames[0][i])
-    plt.axis('off')
-plt.tight_layout()
-plt.savefig('val_image.png')
-
-caption_model.predict(val_frames[0].reshape(1, 5, 224, 224, 3))
