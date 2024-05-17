@@ -4,6 +4,7 @@ import numpy as np
 import pickle as pkl
 import os
 from tensorflow.keras.utils import plot_model
+from tensorflow.keras.models import Model
 
 import matplotlib.pyplot as plt
 
