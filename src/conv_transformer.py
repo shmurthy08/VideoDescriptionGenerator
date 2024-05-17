@@ -39,10 +39,6 @@ with open('train_dataset.pkl', 'rb') as f:
 with open('val_dataset.pkl', 'rb') as f:
     val_dataset = pkl.load(f)
 
-# Print the startseq token index and word
-print(f"Index for 'startseq': {word_index['startseq']}")
-print(f"Word for index 1: {index_word[1]}")
-
 # Preprocess Video Frames
 def preprocess_frames(frames):
     '''
@@ -499,31 +495,27 @@ class TransformerDecoder(tf.keras.layers.Layer):
 
 
 
-# Create a tensor-object for index to word mapping
-keys_tensor = tf.constant(list(index_word.keys()), dtype=tf.int64)
-vals_tensor = tf.constant(list(index_word.values()), dtype=tf.string)
-table_initializer = tf.lookup.KeyValueTensorInitializer(keys_tensor, vals_tensor)
-index_word_table = tf.lookup.StaticHashTable(table_initializer, default_value="<unk>")
-
-
-class VideoCaptioningModel(Model):
-    """
-    A model for video captioning using a combination of ConvLSTM, Transformer Encoder, and Transformer Decoder.
-
+class VideoCaptioningModel(tf.keras.Model):
+    '''
+    Class to Create/Initialize Video Captioning Model.
+    
     Args:
-        conv_lstm_extractor (tf.keras.Model): The ConvLSTM model for extracting video features.
-        transformer_encoder (tf.keras.Model): The Transformer Encoder model for processing video features.
-        transformer_decoder (tf.keras.Model): The Transformer Decoder model for generating captions.
-        num_captions_per_video (int): The number of captions to generate per video.
-
+        conv_lstm_extractor (tf.keras.Model): The ConvLSTM feature extractor model.
+        transformer_encoder (tf.keras.Model): The Transformer encoder model.
+        transformer_decoder (tf.keras.Model): The Transformer decoder model.
+        num_captions_per_video (int): The number of captions per video.
+        
     Attributes:
-        conv_lstm_extractor (tf.keras.Model): The ConvLSTM model for extracting video features.
-        encoder (tf.keras.Model): The Transformer Encoder model for processing video features.
-        decoder (tf.keras.Model): The Transformer Decoder model for generating captions.
-        loss_tracker (tf.metrics.Mean): A metric for tracking the loss during training and testing.
-        acc_tracker (tf.metrics.Mean): A metric for tracking the accuracy during training and testing.
-        num_captions_per_video (int): The number of captions to generate per video.
-    """
+        conv_lstm_extractor (tf.keras.Model): The ConvLSTM feature extractor model.
+        encoder (tf.keras.Model): The Transformer encoder model.
+        decoder (tf.keras.Model): The Transformer decoder model.
+        loss_tracker (tf.keras.metrics.Mean): The loss tracker.
+        acc_tracker (tf.keras.metrics.Mean): The accuracy tracker.
+        correct_order_tracker (tf.keras.metrics.Mean): The correct order tracker.
+        total_words_tracker (tf.keras.metrics.Mean): The total words tracker.
+        two_gram_overlap_tracker (tf.keras.metrics.Mean): The two-gram overlap tracker.
+        num_captions_per_video (int): The number of captions per video.
+    '''
     def __init__(
         self,
         conv_lstm_extractor,
@@ -539,8 +531,8 @@ class VideoCaptioningModel(Model):
         self.acc_tracker = tf.metrics.Mean(name="accuracy")
         self.correct_order_tracker = tf.metrics.Mean(name="correct_order_words")
         self.total_words_tracker = tf.metrics.Mean(name="total_words")
+        self.two_gram_overlap_tracker = tf.metrics.Mean(name="two_gram_overlap")
         self.num_captions_per_video = num_captions_per_video
-        self.last_batch_frames = None  
 
     def calculate_loss(self, y_true, y_pred, mask):
         loss = self.compiled_loss(y_true, y_pred)
@@ -549,39 +541,57 @@ class VideoCaptioningModel(Model):
         return tf.reduce_sum(loss) / tf.reduce_sum(mask)
 
     def calculate_accuracy(self, y_true, y_pred, mask):
-        # Ensure y_true is cast to int64 to match the output type of tf.argmax, which is int64 by default
         y_true = tf.cast(y_true, dtype=tf.int64)
-        # Get the predicted token indices
         y_pred_indices = tf.argmax(y_pred, axis=2)
-        # Calculate where the predictions match the true values
         accuracy = tf.equal(y_true, y_pred_indices)
-        # Apply the mask to ignore padding tokens
         accuracy = tf.math.logical_and(mask, accuracy)
-        # Cast accuracy to float for summation
         accuracy = tf.cast(accuracy, dtype=tf.float32)
         mask = tf.cast(mask, dtype=tf.float32)
-
         return tf.reduce_sum(accuracy) / tf.reduce_sum(mask)
 
     def calculate_correct_order_words(self, y_true, y_pred, mask):
-        # Ensure y_true is cast to int64 to match the output type of tf.argmax
         y_true = tf.cast(y_true, dtype=tf.int64)
-        # Get the predicted token indices
         y_pred_indices = tf.argmax(y_pred, axis=2)
-        # Calculate where the predictions match the true values
         correct_order = tf.equal(y_true, y_pred_indices)
-        # Apply the mask to ignore padding tokens
         correct_order = tf.math.logical_and(mask, correct_order)
-        # Cast correct_order to float for summation
         correct_order = tf.cast(correct_order, dtype=tf.float32)
         mask = tf.cast(mask, dtype=tf.float32)
-        # Calculate the mean accuracy over the masked tokens
         correct_order_sum = tf.reduce_sum(correct_order)
-        
         total_words = tf.reduce_sum(mask)
-
         return correct_order_sum, total_words
 
+    def calculate_2gram_overlap(self, y_true, y_pred, mask):
+        y_pred_indices = tf.argmax(y_pred, axis=-1)
+        true_ngrams = []
+        pred_ngrams = []
+
+        for i in range(self.num_captions_per_video):
+            valid_true = tf.boolean_mask(y_true[:, i], mask[:, i])
+            valid_pred = tf.boolean_mask(y_pred_indices[:, i], mask[:, i])
+
+            true_strings = tf.strings.as_string(valid_true)
+            pred_strings = tf.strings.as_string(valid_pred)
+
+            true_2grams = tf.strings.ngrams(true_strings, ngram_width=2, separator=' ')
+            pred_2grams = tf.strings.ngrams(pred_strings, ngram_width=2, separator=' ')
+
+            true_ngrams.append(true_2grams)
+            pred_ngrams.append(pred_2grams)
+
+        true_ngrams_flat = tf.concat(true_ngrams, axis=0)
+        pred_ngrams_flat = tf.concat(pred_ngrams, axis=0)
+
+        intersection = tf.sets.intersection(
+            tf.expand_dims(true_ngrams_flat, 0),
+            tf.expand_dims(pred_ngrams_flat, 0)
+        )
+        union = tf.sets.union(
+            tf.expand_dims(true_ngrams_flat, 0),
+            tf.expand_dims(pred_ngrams_flat, 0)
+        )
+
+        overlap = tf.size(intersection.values) / tf.size(union.values)
+        return overlap
 
     def train_step(self, batch_data):
         batch_frames, batch_seq = batch_data
@@ -631,77 +641,74 @@ class VideoCaptioningModel(Model):
         batch_frames, batch_seq = batch_data
         batch_loss = 0
         batch_acc = 0
+        batch_two_gram_overlap = 0
         batch_correct_order = 0
         batch_total_words = 0
 
         video_features = self.conv_lstm_extractor(batch_frames, training=False)
-        
-        all_pred_words = []
 
         for i in range(self.num_captions_per_video):
             encoder_out = self.encoder(video_features, training=False)
             batch_seq_inp = batch_seq[:, i, :-1]
             batch_seq_true = batch_seq[:, i, 1:]
             mask = tf.math.not_equal(batch_seq_true, 0)
-            batch_seq_pred = self.decoder(
-                batch_seq_inp, encoder_out, training=False, mask=mask
-            )
+            batch_seq_pred = self.decoder(batch_seq_inp, encoder_out, training=False, mask=mask)
+            
             caption_loss = self.calculate_loss(batch_seq_true, batch_seq_pred, mask)
             caption_acc = self.calculate_accuracy(batch_seq_true, batch_seq_pred, mask)
+            caption_overlap = self.calculate_2gram_overlap(batch_seq_true, batch_seq_pred, mask)
             correct_order, total_words = self.calculate_correct_order_words(batch_seq_true, batch_seq_pred, mask)
-
-            batch_loss += caption_loss
-            batch_acc += caption_acc
             batch_correct_order += correct_order
             batch_total_words += total_words
+            batch_two_gram_overlap += caption_overlap
+            batch_loss += caption_loss
+            batch_acc += caption_acc
 
-
-            # Convert predicted token indices to words using the StaticHashTable
-            pred_token_indices = tf.argmax(batch_seq_pred, axis=-1)
-            pred_words = index_word_table.lookup(pred_token_indices)
-            pred_captions = tf.strings.reduce_join(pred_words, axis=1, separator=' ')
-            tf.print("PREDICTED CAPTION: ", pred_captions)
             
         loss = batch_loss
         batch_acc /= float(self.num_captions_per_video)
         batch_correct_order /= float(self.num_captions_per_video)
         batch_total_words /= float(self.num_captions_per_video)
+        batch_two_gram_overlap /= float(self.num_captions_per_video)
+        
 
         self.loss_tracker.update_state(loss)
         self.acc_tracker.update_state(batch_acc)
         self.correct_order_tracker.update_state(batch_correct_order)
         self.total_words_tracker.update_state(batch_total_words)
+        self.two_gram_overlap_tracker.update_state(batch_two_gram_overlap)
 
         return {
             "loss": self.loss_tracker.result(),
             "acc": self.acc_tracker.result(),
             "correct_order_words": self.correct_order_tracker.result(),  
-            "total_words": self.total_words_tracker.result()
+            "total_words": self.total_words_tracker.result(),
+            "two_gram_overlap": self.two_gram_overlap_tracker.result()
 
         }
 
-        @property
-        def metrics(self):
-            return [self.loss_tracker, self.acc_tracker, self.correct_order_tracker, self.total_words_tracker]
+    @property
+    def metrics(self):
+        return [self.loss_tracker, self.acc_tracker, self.correct_order_tracker, self.total_words_tracker, self.two_gram_overlap_tracker]
+    
+   
+    def get_config(self):
+        return {
+            "conv_lstm_extractor": tf.keras.utils.serialize_keras_object(self.conv_lstm_extractor),
+            "transformer_encoder": tf.keras.utils.serialize_keras_object(self.encoder),
+            "transformer_decoder": tf.keras.utils.serialize_keras_object(self.decoder),
+            "num_captions_per_video": self.num_captions_per_video
+        }
+
+    @classmethod
+    def from_config(cls, config):
+        # Here, you need to ensure that the objects are correctly instantiated from their configs
+        conv_lstm_extractor = tf.keras.utils.deserialize_keras_object(config['conv_lstm_extractor'])
+        transformer_encoder = tf.keras.utils.deserialize_keras_object(config['transformer_encoder'])
+        transformer_decoder = tf.keras.utils.deserialize_keras_object(config['transformer_decoder'])
+        num_captions_per_video = config['num_captions_per_video']
         
-
-        def get_config(self):
-            return {
-                "conv_lstm_extractor": tf.keras.utils.serialize_keras_object(self.conv_lstm_extractor),
-                "transformer_encoder": tf.keras.utils.serialize_keras_object(self.encoder),
-                "transformer_decoder": tf.keras.utils.serialize_keras_object(self.decoder),
-                "num_captions_per_video": self.num_captions_per_video
-            }
-
-        @classmethod
-        def from_config(cls, config):
-            # Here, you need to ensure that the objects are correctly instantiated from their configs
-            conv_lstm_extractor = tf.keras.utils.deserialize_keras_object(config['conv_lstm_extractor'])
-            transformer_encoder = tf.keras.utils.deserialize_keras_object(config['transformer_encoder'])
-            transformer_decoder = tf.keras.utils.deserialize_keras_object(config['transformer_decoder'])
-            num_captions_per_video = config['num_captions_per_video']
-            
-            return cls(conv_lstm_extractor, transformer_encoder, transformer_decoder, num_captions_per_video)
+        return cls(conv_lstm_extractor, transformer_encoder, transformer_decoder, num_captions_per_video)
 
 
 
@@ -816,10 +823,8 @@ caption_model.compile(
 history = caption_model.fit(
     train_data,
     validation_data=val_data,
-    epochs=15,
-    callbacks=[tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
-               tf.keras.callbacks.ModelCheckpoint('caption_model.h5', save_best_only=True, save_weights_only=True)],
-
+    epochs=2,
+    
 )
 
 
