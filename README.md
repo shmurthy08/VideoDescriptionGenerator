@@ -31,6 +31,8 @@ python3 data_splitting.py
 python3 feature_extraction.py
 python3 conv_transformer.py
 ```
+## Location of code:
+- All code is located in the `src/` directory.
 
 ## References:
 - [MSVD dataset](https://paperswithcode.com/dataset/msvd)
