@@ -824,6 +824,9 @@ history = caption_model.fit(
     train_data,
     validation_data=val_data,
     epochs=15,
+    callbacks=[tf.keras.callbacks.EarlyStopping(patience=3, monitor='val_loss'),
+               tf.keras.callbacks.ModelCheckpoint('caption_model_weights.h5', save_best_only=True, save_weights_only=True),
+               TensorBoard(log_dir='logs', histogram_freq=1, write_graph=True, write_images=True)],
     
 )
 
