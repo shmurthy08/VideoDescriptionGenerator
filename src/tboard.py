@@ -3,6 +3,7 @@ import datetime
 
 '''
 File will create a way to visualize the tensorboard outputs
+Use this file when needed to understand params. The files are too large to push to github so they are not included in the repo.
 '''
 
 inputs = input("Do you want to start tensorboard? (y/n): ")

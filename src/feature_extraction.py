@@ -1,14 +1,10 @@
 import tensorflow as tf
-from tensorflow.keras.layers import ConvLSTM2D, Input, Conv3D, LayerNormalization, Conv2D, Flatten, Dense, Embedding, BatchNormalization, Lambda, MultiHeadAttention, GlobalAveragePooling2D, Reshape, Add
-from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.models import Model
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import ConvLSTM2D, Input, Conv3D, BatchNormalization, Add
 import numpy as np
 import pickle as pkl
 import os
-from preprocessing import ClipsCaptions
 from tensorflow.keras.utils import plot_model
+
 import matplotlib.pyplot as plt
 
 
