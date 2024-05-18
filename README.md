@@ -16,7 +16,7 @@ The goal of this project is to create a model, leveraging ConvLSTM and Transform
 
 ## Model weights:
 - The ConvTransformer model weights are extremely large and unable to be uploaded to github for reproduction.
-- However, the feature extraction model has been uploaded to github, the ConvTransformer model will leverage this feature extraction model to create a close 1:1 reproduction of the model we trained. Furthermore, the model was trained with the best parameters using Keras Tuner, hence the weights and gradients are inherently the best possible version. 
+- However, the feature extraction model has been uploaded to github, the ConvTransformer model will leverage this feature extraction model to create a close 1:1 reproduction of the model we trained. Furthermore, the model was trained with the best parameters using Keras Tuner, hence the weights and gradients are close to the best possible version. 
 - We tried multiple times to upload the weights to github, however the file couldn't be read and published since it was too large. We apologize for this issue, and we hope providing the feature extraction model will suffice coupled with the best possible parameters for the ConvTransformer model.
 
 ## Project Contributons:
