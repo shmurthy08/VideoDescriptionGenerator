@@ -9,6 +9,10 @@ The goal of this project is to create a model, leveraging ConvLSTM and Transform
 - Shanzeh Bandukda (bandukda@chapman.edu)
 - Noah Fuery (nfuery@chapman.edu)
 
+# Final Presentation:
+
+[Final Presentation](https://docs.google.com/presentation/d/1Fi8m1O6YEa9I6XqGIBWcjJpIPgreoqhprWltktRnhKY/edit?usp=sharing)
+
 ## Project Contributons:
 - NOTE: Everyone contributed to the coding aspects via pair programming. 
 - Shree Murthy: Coded the Feature Extraction model and Transformer models.
