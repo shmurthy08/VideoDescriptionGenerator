@@ -120,7 +120,7 @@ val_data = val_data.prefetch(tf.data.experimental.AUTOTUNE)
 model_checkpoint = tf.keras.callbacks.ModelCheckpoint('fe_model.h5', save_best_only=True, monitor='val_loss', mode='min', verbose=1)
 reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(factor=0.1, patience=2, verbose=1)
 earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=4, verbose=1)
-history = autoencoder.fit(train_data, epochs=1, validation_data=val_data, callbacks=[model_checkpoint, reduce_lr, earlystop], verbose=1)
+history = autoencoder.fit(train_data, epochs=35, validation_data=val_data, callbacks=[model_checkpoint, reduce_lr, earlystop], verbose=1)
 
 plot_model(autoencoder, to_file='architecture.png', show_shapes=True, show_layer_names=True)
 autoencoder.save('Feature_extract.h5')
